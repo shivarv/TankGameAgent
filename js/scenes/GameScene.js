@@ -5,20 +5,21 @@ class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   /* ══════════════════════════════════════════════════════════
-     INIT / CREATE
+     CREATE
   ══════════════════════════════════════════════════════════ */
   create() {
     this.score       = 0;
     this.wave        = 1;
     this.lives       = 3;
-    this.kills       = 0;       // kills this wave
+    this.kills       = 0;
     this.playerAlive = true;
     this.fireAngle   = 0;
     this.controlMode = 'keyboard';  // 'keyboard' | 'mouse'
 
-    // active effect end-timestamps (ms); 0 = inactive
-    this.effectEnd = { speed:0, rapidfire:0, tripleshot:0 };
-    this.shieldActive = false;
+    // stacks[id] = current active stack count (0 = inactive)
+    this.stacks   = { speed:0, bulletspd:0, rapidfire:0, shield:0, tripleshot:0 };
+    // stackEnd[id] = ms timestamp when a timed effect expires (0 = not running)
+    this.stackEnd = { speed:0, bulletspd:0, rapidfire:0, tripleshot:0 };
 
     createTextures(this);
     this._buildFloor();
@@ -34,9 +35,18 @@ class GameScene extends Phaser.Scene {
 
     this.input.keyboard.on('keydown-TAB', () => {
       this.controlMode = this.controlMode === 'keyboard' ? 'mouse' : 'keyboard';
-      this._refreshHUD();
     });
 
+    // M key toggles mute
+    this.input.keyboard.on('keydown-M', () => {
+      SoundFX.toggleMute();
+    });
+
+    // P key toggles pause
+    this.isPaused = false;
+    this.input.keyboard.on('keydown-P', () => this._togglePause());
+
+    // mouse-click fires only in mouse mode
     this.input.on('pointerdown', () => {
       if (this.controlMode !== 'mouse' || !this.playerAlive) return;
       this._tryPlayerFire(this.time.now);
@@ -102,6 +112,7 @@ class GameScene extends Phaser.Scene {
     this.player.setDepth(5);
     this.player.lastShot = 0;
     this.player.hp = 3;
+    this.player.body.setSize(34, 34);
 
     this.shieldSprite = this.add.image(0, 0, 'shieldFx')
       .setDepth(6).setVisible(false).setAlpha(0.85);
@@ -116,51 +127,79 @@ class GameScene extends Phaser.Scene {
     this.physics.add.collider(enemies, stoneWalls);
     this.physics.add.collider(enemies, enemies);
 
-    this.physics.add.overlap(playerBullets, stoneWalls,   this._onBulletStone,           null, this);
-    this.physics.add.overlap(enemyBullets,  stoneWalls,   this._onBulletStone,           null, this);
-    this.physics.add.overlap(playerBullets, steelWalls,   this._onBulletSteel,           null, this);
-    this.physics.add.overlap(enemyBullets,  steelWalls,   this._onBulletSteel,           null, this);
-    this.physics.add.overlap(playerBullets, enemies,      this._onPlayerBulletEnemy,     null, this);
-    this.physics.add.overlap(enemyBullets,  player,       this._onEnemyBulletPlayer,     null, this);
-    this.physics.add.overlap(playerBullets, enemyBullets, this._onBulletsCollide,        null, this);
-    this.physics.add.overlap(enemies,       player,       this._onEnemyRam,              null, this);
-    this.physics.add.overlap(powerups,      player,       this._onPlayerPowerup,         null, this);
+    this.physics.add.overlap(playerBullets, stoneWalls,   this._onBulletStone,       null, this);
+    this.physics.add.overlap(enemyBullets,  stoneWalls,   this._onBulletStone,       null, this);
+    this.physics.add.overlap(playerBullets, steelWalls,   this._onBulletSteel,       null, this);
+    this.physics.add.overlap(enemyBullets,  steelWalls,   this._onBulletSteel,       null, this);
+    this.physics.add.overlap(playerBullets, enemies,      this._onPlayerBulletEnemy, null, this);
+    // swap order so callback receives (player, bullet) matching _onEnemyBulletPlayer(player, bullet)
+    this.physics.add.overlap(player,        enemyBullets, this._onEnemyBulletPlayer, null, this);
+    this.physics.add.overlap(playerBullets, enemyBullets, this._onBulletsCollide,    null, this);
+    // swap order so callback receives (player, enemy) matching _onEnemyRam(player, enemy)
+    this.physics.add.overlap(player,        enemies,      this._onEnemyRam,          null, this);
+    // Note order: (player, powerups) → callback(player, powerup)
+    this.physics.add.overlap(player, powerups, this._onPlayerPowerup, null, this);
   }
 
   /* ══════════════════════════════════════════════════════════
-     HUD
+     HUD  — per-effect coloured text, right-side stack panel
   ══════════════════════════════════════════════════════════ */
   _buildHUD() {
     const st = { fontSize:'18px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:4 };
-    const sm = { fontSize:'13px', fontFamily:'monospace', color:'#aaffaa', stroke:'#000', strokeThickness:3 };
-    this.hudScore   = this.add.text(12, 10, 'Score: 0',   st).setDepth(50).setScrollFactor(0);
-    this.hudWave    = this.add.text(12, 34, 'Wave:  1',   st).setDepth(50).setScrollFactor(0);
-    this.hudLives   = this.add.text(12, 58, 'Lives: +++', st).setDepth(50).setScrollFactor(0);
-    this.hudMode    = this.add.text(12, 82, '',           sm).setDepth(50).setScrollFactor(0);
-    this.hudEffects = this.add.text(W - 12, 10, '', {
-      fontSize:'13px', fontFamily:'monospace', color:'#ffffff',
-      stroke:'#000', strokeThickness:3, align:'right'
-    }).setDepth(50).setScrollFactor(0).setOrigin(1, 0);
+    this.hudScore = this.add.text(12, 10, 'Score: 0',   st).setDepth(50).setScrollFactor(0);
+    this.hudWave  = this.add.text(12, 34, 'Wave:  1',   st).setDepth(50).setScrollFactor(0);
+    this.hudLives = this.add.text(12, 58, 'Lives: +++', st).setDepth(50).setScrollFactor(0);
+    this.hudMode  = this.add.text(12, 82, '', {
+      fontSize:'12px', fontFamily:'monospace', color:'#aaffaa', stroke:'#000', strokeThickness:3
+    }).setDepth(50).setScrollFactor(0);
+    this.hudMute  = this.add.text(12, 99, '', {
+      fontSize:'12px', fontFamily:'monospace', color:'#888888', stroke:'#000', strokeThickness:3
+    }).setDepth(50).setScrollFactor(0);
+
+    // pause overlay
+    this.pauseOverlay = this.add.rectangle(W/2, H/2, W, H, 0x000000, 0.6)
+      .setDepth(80).setScrollFactor(0).setVisible(false);
+    this.pauseText = this.add.text(W/2, H/2, 'PAUSED\n\nP  to resume', {
+      fontSize:'32px', fontFamily:'monospace', color:'#ffffff',
+      stroke:'#000', strokeThickness:6, align:'center'
+    }).setDepth(81).setScrollFactor(0).setOrigin(0.5).setVisible(false);
+
+    // right-side: one coloured text row per powerup type
+    const COLS = { speed:'#f39c12', bulletspd:'#e74c3c', rapidfire:'#e67e22', tripleshot:'#bb88ee', shield:'#5dade2' };
+    this.hudStacks = {};
+    Object.entries(COLS).forEach(([id, col], i) => {
+      this.hudStacks[id] = this.add.text(W - 10, 10 + i * 20, '', {
+        fontSize:'13px', fontFamily:'monospace', color: col,
+        stroke:'#000', strokeThickness:3
+      }).setDepth(50).setScrollFactor(0).setOrigin(1, 0);
+    });
   }
 
   _refreshHUD() {
     const now = this.time.now;
     this.hudScore.setText('Score: ' + this.score);
     this.hudWave.setText ('Wave:  ' + this.wave);
-    this.hudLives.setText('Lives: ' + '+ '.repeat(this.lives).trim());
+    this.hudLives.setText('Lives: ' + Array(this.lives + 1).join('+ ').trim());
+    this.hudMode.setText(
+      this.controlMode === 'keyboard' ? '[TAB] KB: move+SPACE' : '[TAB] Mouse: aim+click'
+    ).setColor(this.controlMode === 'keyboard' ? '#aaffaa' : '#aaffff');
+    this.hudMute.setText(SoundFX.muted ? '[M] Sound: OFF' : '[M] Sound: ON')
+      .setColor(SoundFX.muted ? '#ff6666' : '#888888');
 
-    if (this.controlMode === 'keyboard') {
-      this.hudMode.setText('[TAB] KB: move+SPACE').setColor('#aaffaa');
-    } else {
-      this.hudMode.setText('[TAB] Mouse: aim+click').setColor('#aaffff');
-    }
-
-    const lines = [];
-    if (this.effectEnd.speed     > now) lines.push(`SPD  ${((this.effectEnd.speed    -now)/1000).toFixed(1)}s`);
-    if (this.effectEnd.rapidfire > now) lines.push(`RPD  ${((this.effectEnd.rapidfire-now)/1000).toFixed(1)}s`);
-    if (this.effectEnd.tripleshot> now) lines.push(`x3   ${((this.effectEnd.tripleshot-now)/1000).toFixed(1)}s`);
-    if (this.shieldActive)              lines.push('SLD  active');
-    this.hudEffects.setText(lines.join('\n'));
+    // timed effects
+    const LABELS = { speed:'SPD', bulletspd:'BLT', rapidfire:'ROF', tripleshot:' x3' };
+    ['speed', 'bulletspd', 'rapidfire', 'tripleshot'].forEach(id => {
+      const n = this.stacks[id];
+      if (n > 0 && this.stackEnd[id] > now) {
+        const secs = ((this.stackEnd[id] - now) / 1000).toFixed(1);
+        this.hudStacks[id].setText(`${LABELS[id]} ×${n}  ${secs}s`);
+      } else {
+        this.hudStacks[id].setText('');
+      }
+    });
+    // shield (consumable, no timer)
+    const sh = this.stacks.shield;
+    this.hudStacks.shield.setText(sh > 0 ? `SLD ×${sh}` : '');
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -188,38 +227,61 @@ class GameScene extends Phaser.Scene {
     const type = this._pickEnemyType();
     const e    = this.enemies.create(pt.x, pt.y, 'enemy_' + type.id);
 
-    e.setDepth(5);
-    e.setCollideWorldBounds(true);
-    e.setDrag(300);
+    e.setDepth(5).setCollideWorldBounds(true).setDrag(300);
     e.setMaxVelocity(type.maxVel + this.wave * 5);
 
-    e.enemyType  = type;
-    e.hp         = type.hp;
-    e.speed      = type.speed  + this.wave * 4;
-    e.fireRate   = Math.max(Math.floor(type.fireRate  - this.wave * 60), Math.floor(type.fireRate  * 0.5));
-    e.bulletSpd  = Math.min(type.bulletSpd + this.wave * 4, 500);
-    e.lastShot   = 0;
+    e.enemyType = type;
+    e.hp        = type.hp;
+    e.speed     = type.speed  + this.wave * 4;
+    e.fireRate  = Math.max(Math.floor(type.fireRate  - this.wave * 60), Math.floor(type.fireRate  * 0.5));
+    e.bulletSpd = Math.min(type.bulletSpd + this.wave * 4, 500);
+    e.lastShot  = 0;
+    e.body.setSize(32, 32);
   }
 
   /* ══════════════════════════════════════════════════════════
      UPDATE LOOP
   ══════════════════════════════════════════════════════════ */
   update(time) {
+    if (this.isPaused) return;
     if (!this.playerAlive) return;
+    this._tickEffects(time);
     this._movePlayer(time);
     this._updateEnemies(time);
     this._updateShieldSprite();
     this._refreshHUD();
   }
 
+  _togglePause() {
+    if (!this.playerAlive) return;
+    this.isPaused = !this.isPaused;
+    if (this.isPaused) {
+      this.physics.pause();
+      this.tweens.pauseAll();
+    } else {
+      this.physics.resume();
+      this.tweens.resumeAll();
+    }
+    this.pauseOverlay.setVisible(this.isPaused);
+    this.pauseText.setVisible(this.isPaused);
+  }
+
+  /* expire timed effects whose timer has elapsed */
+  _tickEffects(time) {
+    for (const key of ['speed', 'bulletspd', 'rapidfire', 'tripleshot']) {
+      if (this.stacks[key] > 0 && this.stackEnd[key] <= time)
+        this.stacks[key] = 0;
+    }
+  }
+
   _updateShieldSprite() {
-    this.shieldSprite.setVisible(this.shieldActive);
-    if (this.shieldActive)
-      this.shieldSprite.setPosition(this.player.x, this.player.y);
+    const active = this.stacks.shield > 0;
+    this.shieldSprite.setVisible(active);
+    if (active) this.shieldSprite.setPosition(this.player.x, this.player.y);
   }
 
   /* ══════════════════════════════════════════════════════════
-     PLAYER MOVEMENT & FIRE
+     PLAYER MOVEMENT & FIRING
   ══════════════════════════════════════════════════════════ */
   _movePlayer(time) {
     const { cursors, wasd, player } = this;
@@ -231,8 +293,8 @@ class GameScene extends Phaser.Scene {
     if (cursors.down.isDown  || wasd.S.isDown) ay =  1;
     if (ax !== 0 && ay !== 0) { ax *= Math.SQRT1_2; ay *= Math.SQRT1_2; }
 
-    const effectiveSpeed = this.effectEnd.speed > time ? PLAYER_SPEED * 1.6 : PLAYER_SPEED;
-    player.setMaxVelocity(effectiveSpeed);
+    const speedMult = 1 + this.stacks.speed * POWERUP_PER_STACK.speed;
+    player.setMaxVelocity(PLAYER_SPEED * speedMult);
     player.setAcceleration(ax * PLAYER_ACCEL, ay * PLAYER_ACCEL);
 
     if (this.controlMode === 'mouse') {
@@ -243,26 +305,31 @@ class GameScene extends Phaser.Scene {
     } else {
       if (ax !== 0 || ay !== 0)
         this.fireAngle = Phaser.Math.RadToDeg(Math.atan2(ay, ax));
-      if ((cursors.space.isDown || wasd.SPACE.isDown))
+      if (cursors.space.isDown || wasd.SPACE.isDown)
         this._tryPlayerFire(time);
     }
 
-    // rotate tank to face aim direction
     const aimRad = Phaser.Math.DegToRad(this.fireAngle);
     const cur    = Phaser.Math.DegToRad(player.angle);
     player.angle = Phaser.Math.RAD_TO_DEG * Phaser.Math.Angle.RotateTo(cur, aimRad, 0.18);
   }
 
-  _currentFireRate(time) {
-    return this.effectEnd.rapidfire > time ? Math.floor(PLAYER_FIRE_RATE * 0.35) : PLAYER_FIRE_RATE;
+  /* effective fire interval in ms (lower = faster) */
+  _currentFireRate() {
+    const reduction = this.stacks.rapidfire * POWERUP_PER_STACK.rapidfire;
+    return Math.max(Math.floor(PLAYER_FIRE_RATE * (1 - reduction)), 60);
+  }
+
+  /* effective player bullet speed */
+  _currentBulletSpeed() {
+    return Math.floor(BULLET_SPEED_P * (1 + this.stacks.bulletspd * POWERUP_PER_STACK.bulletspd));
   }
 
   _tryPlayerFire(time) {
     const player = this.player;
-    if (time <= player.lastShot + this._currentFireRate(time)) return;
+    if (time <= player.lastShot + this._currentFireRate()) return;
 
-    const tripleActive = this.effectEnd.tripleshot > time;
-    if (tripleActive) {
+    if (this.stacks.tripleshot > 0) {
       this._fireBullet(player.x, player.y, this.fireAngle - 15, 'player');
       this._fireBullet(player.x, player.y, this.fireAngle,      'player');
       this._fireBullet(player.x, player.y, this.fireAngle + 15, 'player');
@@ -272,6 +339,7 @@ class GameScene extends Phaser.Scene {
 
     player.lastShot = time;
     this.cameras.main.shake(60, 0.006);
+    SoundFX.playerShoot();
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -291,12 +359,13 @@ class GameScene extends Phaser.Scene {
       e.setAcceleration(Math.cos(angleRad) * e.speed * 4, Math.sin(angleRad) * e.speed * 4);
 
       if (time > e.lastShot + e.fireRate) {
-        const acc       = e.enemyType.aimAcc;
-        const travelT   = dist / e.bulletSpd;
-        const predX     = this.player.x + this.player.body.velocity.x * travelT * acc;
-        const predY     = this.player.y + this.player.body.velocity.y * travelT * acc;
-        const aimAngle  = Phaser.Math.RadToDeg(Math.atan2(predY - e.y, predX - e.x));
+        const acc      = e.enemyType.aimAcc;
+        const travelT  = dist / e.bulletSpd;
+        const predX    = this.player.x + this.player.body.velocity.x * travelT * acc;
+        const predY    = this.player.y + this.player.body.velocity.y * travelT * acc;
+        const aimAngle = Phaser.Math.RadToDeg(Math.atan2(predY - e.y, predX - e.x));
         this._fireBullet(e.x, e.y, aimAngle, 'enemy', e.bulletSpd);
+        SoundFX.enemyShoot();
         e.lastShot = time;
       }
     }, this);
@@ -307,7 +376,7 @@ class GameScene extends Phaser.Scene {
   ══════════════════════════════════════════════════════════ */
   _fireBullet(x, y, angleDeg, team, customSpeed) {
     const isPlayer = team === 'player';
-    const speed    = customSpeed ?? (isPlayer ? BULLET_SPEED_P : 240);
+    const speed    = customSpeed ?? (isPlayer ? this._currentBulletSpeed() : 240);
     const group    = isPlayer ? this.playerBullets : this.enemyBullets;
 
     const b = this.physics.add.image(x, y, isPlayer ? 'bulletP' : 'bulletE');
@@ -350,40 +419,55 @@ class GameScene extends Phaser.Scene {
     pu.powerupType = type;
     this.powerups.add(pu);
 
-    // pulse scale
-    this.tweens.add({ targets:pu, scaleX:1.25, scaleY:1.25, yoyo:true, repeat:-1, duration:600, ease:'Sine.easeInOut' });
-
-    // auto-despawn after 12 s
+    this.tweens.add({ targets:pu, scaleX:1.28, scaleY:1.28, yoyo:true, repeat:-1, duration:550, ease:'Sine.easeInOut' });
     this.time.delayedCall(12000, () => { if (pu.active) pu.destroy(); });
   }
 
+  /* callback order: (player, powerup) — overlap set up as (player, powerups, ...) */
   _onPlayerPowerup(player, pu) {
     if (!pu.active) return;
-    const type = pu.powerupType;
+    const id = pu.powerupType.id;
     pu.destroy();
+    SoundFX.powerup();
 
-    switch (type.id) {
-      case 'health':
-        this.lives = Math.min(this.lives + 1, 5);
-        this._flashMsg('+1 HP', '#2ecc40');
-        break;
-      case 'speed':
-        this.effectEnd.speed = this.time.now + POWERUP_DURATION;
-        this._flashMsg('SPEED UP!', '#f1c40f');
-        break;
-      case 'rapidfire':
-        this.effectEnd.rapidfire = this.time.now + POWERUP_DURATION;
-        this._flashMsg('RAPID FIRE!', '#e67e22');
-        break;
-      case 'shield':
-        this.shieldActive = true;
-        this._flashMsg('SHIELD ON!', '#3498db');
-        break;
-      case 'tripleshot':
-        this.effectEnd.tripleshot = this.time.now + POWERUP_DURATION;
-        this._flashMsg('TRIPLE SHOT!', '#9b59b6');
-        break;
+    // ── instant: health ──
+    if (id === 'health') {
+      this.lives = Math.min(this.lives + 1, POWERUP_CAPS.health);
+      this._flashMsg('+1 HP', '#2ecc40');
+      return;
     }
+
+    // ── consumable: shield ──
+    if (id === 'shield') {
+      const prev = this.stacks.shield;
+      this.stacks.shield = Math.min(prev + 1, POWERUP_CAPS.shield);
+      const suffix = prev >= POWERUP_CAPS.shield ? ' (MAX)' : ` ×${this.stacks.shield}`;
+      this._flashMsg('SHIELD' + suffix, '#5dade2');
+      return;
+    }
+
+    // ── timed stackable effects ──
+    const prev  = this.stacks[id];
+    const atCap = prev >= POWERUP_CAPS[id];
+    this.stacks[id]   = Math.min(prev + 1, POWERUP_CAPS[id]);
+    this.stackEnd[id] = this.time.now + POWERUP_DURATION;  // refresh / start timer
+
+    const MSGS = { speed:'SPEED UP', bulletspd:'SHOTS FASTER', rapidfire:'RAPID FIRE', tripleshot:'TRIPLE SHOT' };
+    const COLS = { speed:'#f39c12', bulletspd:'#e74c3c',      rapidfire:'#e67e22',    tripleshot:'#bb88ee' };
+    this._flashMsg(MSGS[id] + (atCap ? ' (MAX)' : ` ×${this.stacks[id]}`), COLS[id]);
+  }
+
+  /* consume one shield stack; called before _playerHit */
+  _absorbWithShield() {
+    this.stacks.shield = Math.max(this.stacks.shield - 1, 0);
+    if (this.stacks.shield > 0) {
+      SoundFX.shieldAbsorb();
+      this._flashMsg(`SHIELD ×${this.stacks.shield}`, '#5dade2');
+    } else {
+      SoundFX.shieldBreak();
+      this._flashMsg('SHIELD GONE!', '#5dade2');
+    }
+    this.cameras.main.shake(80, 0.01);
   }
 
   _flashMsg(text, color) {
@@ -425,6 +509,7 @@ class GameScene extends Phaser.Scene {
   ══════════════════════════════════════════════════════════ */
   _onBulletStone(bullet, stone) {
     if (!bullet.active || !stone.active) return;
+    SoundFX.wallHit();
     this._killBullet(bullet);
     this._spawnExplosion(stone.x, stone.y, 'small');
     stone.destroy();
@@ -432,6 +517,7 @@ class GameScene extends Phaser.Scene {
 
   _onBulletSteel(bullet) {
     if (!bullet.active) return;
+    SoundFX.wallHit();
     this._spawnExplosion(bullet.x, bullet.y, 'small');
     this._killBullet(bullet);
   }
@@ -442,6 +528,7 @@ class GameScene extends Phaser.Scene {
     this._killBullet(bullet);
     enemy.hp--;
     if (enemy.hp <= 0) {
+      SoundFX.bigExplosion();
       this._spawnExplosion(enemy.x, enemy.y, 'big');
       this._spawnPowerUp(enemy.x, enemy.y);
       this.score += enemy.enemyType.points * this.wave;
@@ -458,13 +545,8 @@ class GameScene extends Phaser.Scene {
     if (!bullet.active || !player.active) return;
     if (bullet.team !== 'enemy') return;
     this._killBullet(bullet);
-    if (this.shieldActive) {
-      this.shieldActive = false;
-      this._flashMsg('SHIELD BROKEN!', '#3498db');
-      this.cameras.main.shake(80, 0.01);
-    } else {
-      this._playerHit();
-    }
+    if (this.stacks.shield > 0) this._absorbWithShield();
+    else this._playerHit();
   }
 
   _onBulletsCollide(b1, b2) {
@@ -482,12 +564,8 @@ class GameScene extends Phaser.Scene {
     this.kills++;
     enemy.destroy();
     this._checkWaveAdvance();
-    if (this.shieldActive) {
-      this.shieldActive = false;
-      this._flashMsg('SHIELD BROKEN!', '#3498db');
-    } else {
-      this._playerHit();
-    }
+    if (this.stacks.shield > 0) this._absorbWithShield();
+    else this._playerHit();
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -502,6 +580,7 @@ class GameScene extends Phaser.Scene {
   }
 
   _showWaveBanner() {
+    SoundFX.waveUp();
     const txt = this.add.text(W/2, H/2, `WAVE ${this.wave}`, {
       fontSize:'48px', fontFamily:'monospace',
       color:'#ffff00', stroke:'#000', strokeThickness:8
@@ -521,6 +600,7 @@ class GameScene extends Phaser.Scene {
   _playerHit() {
     if (!this.playerAlive) return;
     this.lives--;
+    SoundFX.playerHit();
     this.cameras.main.shake(200, 0.025);
     this.player.setTint(0xff3333);
     this.time.delayedCall(300, () => { if (this.player.active) this.player.clearTint(); });
@@ -530,6 +610,8 @@ class GameScene extends Phaser.Scene {
   _playerDie() {
     if (!this.playerAlive) return;
     this.playerAlive = false;
+    SoundFX.bigExplosion();
+    this.time.delayedCall(400, () => SoundFX.gameOver());
     this._spawnExplosion(this.player.x, this.player.y, 'big');
     this.player.setActive(false).setVisible(false);
     this.time.delayedCall(1200, () => {

@@ -25,6 +25,7 @@ class StartScene extends Phaser.Scene {
       '        Left-click  (mouse mode)',
       'AIM     Mouse cursor  (mouse mode)',
       'TOGGLE  TAB  — switch control mode',
+      'PAUSE   P',
     ].join('\n'), {
       fontSize:'14px', fontFamily:'monospace', color:'#ccddcc',
       lineSpacing:6, align:'center'

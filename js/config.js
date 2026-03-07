@@ -21,7 +21,24 @@ const MAX_ENEMIES = 8;
 
 /* ── power-ups ── */
 const POWERUP_DROP_CHANCE = 0.45;   // probability a slain enemy drops a power-up
-const POWERUP_DURATION    = 8000;   // ms timed power-ups last
+const POWERUP_DURATION    = 10000;  // ms a timed effect lasts (refreshed on re-pickup)
+
+/* hard caps — maximum stacks for each effect */
+const POWERUP_CAPS = {
+  health    : 10,   // max lives
+  speed     : 3,   // +30 % move speed per stack  → max +90 %
+  bulletspd : 3,   // +25 % bullet speed per stack → max +75 %
+  rapidfire : 3,   // −22 % fire interval per stack → min ~34 % of base
+  shield    : 3,   // blocks per shield pickup stack → max 3 blocks
+  tripleshot: 1,   // on/off (no benefit beyond 1 stack)
+};
+
+/* effect magnitude per stack (for numeric effects) */
+const POWERUP_PER_STACK = {
+  speed     : 0.30,   // fraction of PLAYER_SPEED added per stack
+  bulletspd : 0.25,   // fraction of BULLET_SPEED_P added per stack
+  rapidfire : 0.22,   // fraction of PLAYER_FIRE_RATE subtracted per stack
+};
 
 /* ── colour palette ── */
 const COL = {
@@ -139,14 +156,15 @@ const ENEMY_TYPES = [
   },
 ];
 
-/* ── power-up definitions ──────────────────────────────────
-   timed:false  → instant / one-time effect
-   timed:true   → lasts POWERUP_DURATION ms
+/* ── power-up type catalogue ───────────────────────────────
+   col    : icon background colour (also used in HUD text)
+   stackCap references POWERUP_CAPS[id]
 ─────────────────────────────────────────────────────────── */
 const POWERUP_TYPES = [
-  { id:'health',     label:'+HP',    col:0x2ecc40, timed:false },
-  { id:'speed',      label:'SPD',    col:0xf1c40f, timed:true  },
-  { id:'rapidfire',  label:'RPD',    col:0xe67e22, timed:true  },
-  { id:'shield',     label:'SLD',    col:0x3498db, timed:false },
-  { id:'tripleshot', label:'x3',     col:0x9b59b6, timed:true  },
+  { id:'health',     label:'+HP',  col:0x2ecc40 },  // instant: +1 life
+  { id:'speed',      label:'SPD',  col:0xf39c12 },  // timed: move speed boost
+  { id:'bulletspd',  label:'BLT',  col:0xe74c3c },  // timed: bullet speed boost
+  { id:'rapidfire',  label:'ROF',  col:0xe67e22 },  // timed: rate-of-fire boost
+  { id:'shield',     label:'SLD',  col:0x3498db },  // consumable: absorbs hits
+  { id:'tripleshot', label:'x3',   col:0x9b59b6 },  // timed: fires 3-way spread
 ];
