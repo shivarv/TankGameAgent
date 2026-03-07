@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>Top-Down Tank Battle - Phaser 3</title>
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0a; overflow: hidden; }
+        #game-container {
+            width: 100vw; height: 100vh;
+            display: flex; align-items: center; justify-content: center;
+        }
+        canvas { display: block; image-rendering: pixelated; }
+    </style>
+</head>
+<body>
+<div id="game-container"></div>
+<script src="https://cdn.jsdelivr.net/npm/phaser@3/dist/phaser.min.js"></script>
+<script>
+/*=============================================================
+  TOP-DOWN TANK BATTLE  — Enhanced Edition
+  Features:
+  - Detailed tank sprites (body + tracks + turret drawn with Graphics)
+  - Smooth 8-direction movement with momentum / friction
+  - Turret independently aims in player's fire direction
+  - Bullet trails using Phaser particles
+  - Muzzle flash + screen shake on fire
+  - Explosion particles on tank / wall death
+  - Enemy AI: patrol + track + lead-aim shooting
+  - Health system (player 3 hits, enemies 1 hit)
+  - HUD: score, lives, wave counter
+  - Background grid floor tile for depth
+  - Start screen + Game Over screen with animations
+=============================================================*/
+
+const TILE             = 40;
+const MAP_COLS         = 18;
+const MAP_ROWS         = 14;
+const W                = MAP_COLS * TILE;   // 720
+const H                = MAP_ROWS * TILE;   // 560
+const PLAYER_SPEED     = 180;
+const PLAYER_ACCEL     = 600;
+const PLAYER_DRAG      = 500;
+const BULLET_SPEED_P   = 520;
+const BULLET_SPEED_E   = 300;
+const PLAYER_FIRE_RATE = 250;
+const ENEMY_FIRE_RATE  = 1600;
+const MAX_ENEMIES      = 8;
+
+/* ─── colour palette ─── */
+const COL = {
+  FLOOR_A : 0x1a2a1a,
+  FLOOR_B : 0x1e2e1e,
+  STONE   : 0x8b6343,
+  STONE_D : 0x5a3d22,
+  STEEL   : 0x7a8090,
+  STEEL_D : 0x4a5060,
+  STEEL_H : 0xaabbcc,
+  P_BODY  : 0x2ecc40,
+  P_DARK  : 0x1a7a28,
+  P_TURR  : 0x27ae34,
+  E_BODY  : 0xe74c3c,
+  E_DARK  : 0x922b21,
+  E_TURR  : 0xc0392b,
+  BULLET_P: 0xffff66,
+  BULLET_E: 0xff6644,
+  TRACK   : 0x1a1a1a,
+  WHEEL   : 0x333333,
+};
+
+/* ═══════════════════════════════════════════════════════════
+   TEXTURE FACTORY
+═══════════════════════════════════════════════════════════ */
+function createTextures(scene) {
+  const g = scene.make.graphics({ add: false });
+
+  /* ── floor tiles ── */
+  g.fillStyle(COL.FLOOR_A); g.fillRect(0,0,TILE,TILE);
+  g.fillStyle(COL.FLOOR_B); g.fillRect(TILE/2,0,TILE/2,TILE/2);
+  g.fillStyle(COL.FLOOR_B); g.fillRect(0,TILE/2,TILE/2,TILE/2);
+  g.generateTexture('floor', TILE, TILE); g.clear();
+
+  /* ── stone wall ── */
+  const S = TILE;
+  g.fillStyle(COL.STONE);   g.fillRect(0,0,S,S);
+  g.fillStyle(COL.STONE_D);
+  g.fillRect(2,2,S-4,6);
+  g.fillRect(2,S/2,S-4,4);
+  g.fillStyle(0x00000044);
+  g.fillRect(S-3,0,3,S);
+  g.fillRect(0,S-3,S,3);
+  g.generateTexture('stone', S, S); g.clear();
+
+  /* ── steel wall ── */
+  g.fillStyle(COL.STEEL);   g.fillRect(0,0,S,S);
+  g.fillStyle(COL.STEEL_H); g.fillRect(2,2,S-4,3);
+  g.fillStyle(COL.STEEL_D);
+  g.fillRect(S-4,0,4,S);
+  g.fillRect(0,S-4,S,4);
+  g.fillStyle(COL.STEEL_D);
+  [[6,6],[S-6,6],[6,S-6],[S-6,S-6]].forEach(([rx,ry])=>{
+    g.fillCircle(rx,ry,3);
+  });
+  g.generateTexture('steel', S, S); g.clear();
+
+  /* ── tank drawer helper ── */
+  const drawTank = (bodyCol, darkCol, turrCol, key) => {
+    const TW = 40, TH = 40;
+    // tracks
+    g.fillStyle(COL.TRACK);
+    g.fillRect(0, 0,  TW, 8);
+    g.fillRect(0, TH-8, TW, 8);
+    // wheels
+    g.fillStyle(COL.WHEEL);
+    for(let i=0;i<5;i++){
+      g.fillCircle(4+i*8, 4,    3);
+      g.fillCircle(4+i*8, TH-4, 3);
+    }
+    // hull
+    g.fillStyle(bodyCol);
+    g.fillRect(4, 9, TW-8, TH-18);
+    // shading
+    g.fillStyle(darkCol);
+    g.fillRect(4,  9,  TW-8, 3);
+    g.fillRect(TW-8, 9, 4, TH-18);
+    // turret
+    g.fillStyle(turrCol);
+    g.fillCircle(TW/2, TH/2, 9);
+    // barrel
+    g.fillStyle(darkCol);
+    g.fillRect(TW/2, TH/2-2, 16, 4);
+    // hatch
+    g.fillStyle(darkCol);
+    g.fillCircle(TW/2-2, TH/2, 3);
+    g.generateTexture(key, TW, TH);
+    g.clear();
+  };
+
+  drawTank(COL.P_BODY, COL.P_DARK, COL.P_TURR, 'playerTank');
+  drawTank(COL.E_BODY, COL.E_DARK, COL.E_TURR, 'enemyTank');
+
+  /* ── player bullet ── */
+  g.fillStyle(COL.BULLET_P);
+  g.fillRect(0,1,10,4);
+  g.fillStyle(0xffffff);
+  g.fillRect(0,2,3,2);
+  g.generateTexture('bulletP', 10, 6); g.clear();
+
+  /* ── enemy bullet ── */
+  g.fillStyle(COL.BULLET_E);
+  g.fillRect(0,1,10,4);
+  g.fillStyle(0xffaa88);
+  g.fillRect(0,2,3,2);
+  g.generateTexture('bulletE', 10, 6); g.clear();
+
+  /* ── muzzle flash ── */
+  g.fillStyle(0xffffaa, 0.9);
+  g.fillCircle(8,8,8);
+  g.fillStyle(0xffffff, 0.7);
+  g.fillCircle(8,8,4);
+  g.generateTexture('muzzle', 16, 16); g.clear();
+
+  /* ── spark particle ── */
+  g.fillStyle(0xff6600);
+  g.fillCircle(6,6,6);
+  g.generateTexture('spark', 12, 12); g.clear();
+
+  /* ── smoke particle ── */
+  g.fillStyle(0x888888, 0.5);
+  g.fillCircle(8,8,8);
+  g.generateTexture('smoke', 16, 16); g.clear();
+
+  g.destroy();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   START SCENE
+═══════════════════════════════════════════════════════════ */
+class StartScene extends Phaser.Scene {
+  constructor(){ super('StartScene'); }
+  create(){
+    const cx = W/2, cy = H/2;
+    this.add.rectangle(0,0,W,H,0x0d1f0d).setOrigin(0);
+
+    const title = this.add.text(cx, cy-100, 'TANK BATTLE', {
+      fontSize: '52px', fontFamily: 'monospace',
+      color: '#2ecc40', stroke: '#000', strokeThickness: 8,
+      shadow: { offsetX:4, offsetY:4, color:'#000', blur:0, fill:true }
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: title, scaleX:1.04, scaleY:1.04,
+      yoyo:true, repeat:-1, duration:900, ease:'Sine.easeInOut'
+    });
+
+    this.add.text(cx, cy-20, 'Enhanced Edition', {
+      fontSize:'18px', fontFamily:'monospace', color:'#aaffaa'
+    }).setOrigin(0.5);
+
+    this.add.text(cx, cy+30, [
+      '🎮  WASD / Arrows  — Move',
+      '🔫  SPACE           — Fire',
+      '💥  Destroy enemies for points',
+      '🛡  You have 3 lives',
+    ].join('\n'), {
+      fontSize:'16px', fontFamily:'monospace', color:'#ccddcc',
+      lineSpacing: 8, align:'center'
+    }).setOrigin(0.5);
+
+    const startBtn = this.add.text(cx, cy+150, '▶  PRESS SPACE TO START', {
+      fontSize:'20px', fontFamily:'monospace', color:'#ffff00',
+      stroke:'#000', strokeThickness:4
+    }).setOrigin(0.5);
+
+    this.tweens.add({
+      targets: startBtn, alpha:0.2, yoyo:true,
+      repeat:-1, duration:600, ease:'Sine.easeInOut'
+    });
+
+    this.input.keyboard.once('keydown-SPACE', ()=> this.scene.start('GameScene'));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   GAME OVER SCENE
+═══════════════════════════════════════════════════════════ */
+class GameOverScene extends Phaser.Scene {
+  constructor(){ super('GameOverScene'); }
+  init(d){ this.finalScore = d.score||0; this.wave = d.wave||1; }
+  create(){
+    const cx=W/2, cy=H/2;
+    this.add.rectangle(0,0,W,H,0x100000).setOrigin(0);
+
+    const go = this.add.text(cx, cy-80, 'GAME OVER', {
+      fontSize:'56px', fontFamily:'monospace',
+      color:'#ff3333', stroke:'#000', strokeThickness:8
+    }).setOrigin(0.5).setAlpha(0);
+    this.tweens.add({ targets:go, alpha:1, duration:600, ease:'Power2' });
+
+    this.add.text(cx, cy, `Score : ${this.finalScore}`, {
+      fontSize:'26px', fontFamily:'monospace', color:'#ffffff'
+    }).setOrigin(0.5);
+
+    this.add.text(cx, cy+44, `Wave  : ${this.wave}`, {
+      fontSize:'22px', fontFamily:'monospace', color:'#aaaaaa'
+    }).setOrigin(0.5);
+
+    const restart = this.add.text(cx, cy+120, '▶  SPACE to play again', {
+      fontSize:'20px', fontFamily:'monospace', color:'#ffff00',
+      stroke:'#000', strokeThickness:4
+    }).setOrigin(0.5);
+    this.tweens.add({
+      targets:restart, alpha:0.2, yoyo:true,
+      repeat:-1, duration:600
+    });
+
+    this.input.keyboard.once('keydown-SPACE', ()=> this.scene.start('GameScene'));
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   MAIN GAME SCENE
+═══════════════════════════════════════════════════════════ */
+class GameScene extends Phaser.Scene {
+  constructor(){ super('GameScene'); }
+
+  create(){
+    this.score       = 0;
+    this.wave        = 1;
+    this.lives       = 3;
+    this.playerAlive = true;
+    this.fireAngle   = 0;
+
+    createTextures(this);
+    this._buildFloor();
+    this._buildGroups();
+    this._buildMap();
+    this._buildPlayer();
+    this._buildCollisions();
+    this._buildHUD();
+    this._startSpawner();
+
+    this.cursors = this.input.keyboard.createCursorKeys();
+    this.wasd    = this.input.keyboard.addKeys('W,A,S,D,SPACE');
+
+    this.cameras.main.setBounds(0,0,W,H);
+    this.physics.world.setBounds(0,0,W,H);
+  }
+
+  /* ── floor ── */
+  _buildFloor(){
+    for(let r=0;r<MAP_ROWS;r++)
+      for(let c=0;c<MAP_COLS;c++)
+        this.add.image(c*TILE+TILE/2, r*TILE+TILE/2, 'floor').setDepth(-1);
+  }
+
+  /* ── groups ── */
+  _buildGroups(){
+    this.stoneWalls    = this.physics.add.staticGroup();
+    this.steelWalls    = this.physics.add.staticGroup();
+    this.playerBullets = this.physics.add.group({ runChildUpdate:true });
+    this.enemyBullets  = this.physics.add.group({ runChildUpdate:true });
+    this.enemies       = this.physics.add.group();
+  }
+
+  /* ── map ── */
+  _buildMap(){
+    const L = [
+      'XXXXXXXXXXXXXXXXXX',
+      'X................X',
+      'X..SS....X..SS...X',
+      'X..SS....X..SS...X',
+      'X........X.......X',
+      'X....XX..........X',
+      'X....XX...SS.....X',
+      'X.........SS.....X',
+      'X...SS....X......X',
+      'X...SS....X..XX..X',
+      'X........XX..XX..X',
+      'X..SS............X',
+      'X..SS............X',
+      'XXXXXXXXXXXXXXXXXX',
+    ];
+    L.forEach((row,r)=>{
+      [...row].forEach((ch,c)=>{
+        if(ch==='X'){
+          const s=this.steelWalls.create(c*TILE+TILE/2,r*TILE+TILE/2,'steel');
+          s.setDepth(1); s.refreshBody();
+        } else if(ch==='S'){
+          const s=this.stoneWalls.create(c*TILE+TILE/2,r*TILE+TILE/2,'stone');
+          s.setDepth(1); s.refreshBody();
+        }
+      });
+    });
+  }
+
+  /* ── player ── */
+  _buildPlayer(){
+    this.player = this.physics.add.sprite(W/2, H-TILE*1.8, 'playerTank');
+    this.player.setCollideWorldBounds(true);
+    this.player.setDrag(PLAYER_DRAG);
+    this.player.setMaxVelocity(PLAYER_SPEED);
+    this.player.setDepth(5);
+    this.player.lastShot = 0;
+    this.player.hp = 3;
+  }
+
+  /* ── collisions ── */
+  _buildCollisions(){
+    const {player,enemies,stoneWalls,steelWalls,playerBullets,enemyBullets} = this;
+    this.physics.add.collider(player,  steelWalls);
+    this.physics.add.collider(player,  stoneWalls);
+    this.physics.add.collider(enemies, steelWalls);
+    this.physics.add.collider(enemies, stoneWalls);
+    this.physics.add.collider(enemies, enemies);
+
+    this.physics.add.overlap(playerBullets, stoneWalls,   this._onBulletStone,        null, this);
+    this.physics.add.overlap(enemyBullets,  stoneWalls,   this._onBulletStone,        null, this);
+    this.physics.add.overlap(playerBullets, steelWalls,   this._onBulletSteel,        null, this);
+    this.physics.add.overlap(enemyBullets,  steelWalls,   this._onBulletSteel,        null, this);
+    this.physics.add.overlap(playerBullets, enemies,      this._onPlayerBulletEnemy,  null, this);
+    this.physics.add.overlap(enemyBullets,  player,       this._onEnemyBulletPlayer,  null, this);
+    this.physics.add.overlap(playerBullets, enemyBullets, this._onBulletsCollide,     null, this);
+    this.physics.add.overlap(enemies,       player,       this._onEnemyRam,           null, this);
+  }
+
+  /* ── HUD ── */
+  _buildHUD(){
+    const style = { fontSize:'18px', fontFamily:'monospace',
+                    color:'#ffffff', stroke:'#000', strokeThickness:4 };
+    this.hudScore = this.add.text(12, 10, 'Score: 0',   style).setDepth(50).setScrollFactor(0);
+    this.hudWave  = this.add.text(12, 34, 'Wave:  1',   style).setDepth(50).setScrollFactor(0);
+    this.hudLives = this.add.text(12, 58, 'Lives: ❤❤❤', style).setDepth(50).setScrollFactor(0);
+  }
+
+  _refreshHUD(){
+    this.hudScore.setText('Score: '+this.score);
+    this.hudWave.setText ('Wave:  '+this.wave);
+    this.hudLives.setText('Lives: '+'❤'.repeat(this.lives)+'🖤'.repeat(Math.max(0,3-this.lives)));
+  }
+
+  /* ── spawner ── */
+  _startSpawner(){
+    this.spawnPoints = [
+      { x: TILE*1.5,   y: TILE*1.5 },
+      { x: W/2,        y: TILE*1.5 },
+      { x: W-TILE*1.5, y: TILE*1.5 },
+    ];
+    this.time.addEvent({
+      delay: 2200, callback: this._spawnEnemy,
+      callbackScope: this, loop: true
+    });
+  }
+
+  _spawnEnemy(){
+    if(this.enemies.countActive(true) >= MAX_ENEMIES) return;
+    if(!this.playerAlive) return;
+    const pt = Phaser.Utils.Array.GetRandom(this.spawnPoints);
+    const e  = this.enemies.create(pt.x, pt.y, 'enemyTank');
+    e.setDepth(5);
+    e.setCollideWorldBounds(true);
+    e.setDrag(300);
+    e.setMaxVelocity(90 + this.wave*8);
+    e.speed    = 55 + this.wave*6;
+    e.hp       = 1;
+    e.lastShot = 0;
+    e.fireRate = Math.max(600, ENEMY_FIRE_RATE - this.wave*100);
+  }
+
+  /* ══ UPDATE ══ */
+  update(time){
+    if(!this.playerAlive) return;
+    this._movePlayer(time);
+    this._updateEnemies(time);
+    this._refreshHUD();
+  }
+
+  /* ── player movement ── */
+  _movePlayer(time){
+    const {cursors,wasd,player} = this;
+    let ax=0, ay=0;
+
+    if(cursors.left.isDown  || wasd.A.isDown){ ax=-1; this.fireAngle=180; }
+    if(cursors.right.isDown || wasd.D.isDown){ ax= 1; this.fireAngle=0;   }
+    if(cursors.up.isDown    || wasd.W.isDown){ ay=-1; this.fireAngle=-90; }
+    if(cursors.down.isDown  || wasd.S.isDown){ ay= 1; this.fireAngle=90;  }
+
+    if(ax!==0 && ay!==0){
+      this.fireAngle = Phaser.Math.RadToDeg(Math.atan2(ay,ax));
+      ax *= Math.SQRT1_2; ay *= Math.SQRT1_2;
+    }
+
+    player.setAcceleration(ax*PLAYER_ACCEL, ay*PLAYER_ACCEL);
+
+    if(ax!==0 || ay!==0){
+      const target = Phaser.Math.DegToRad(Phaser.Math.RadToDeg(Math.atan2(ay,ax)));
+      const current = Phaser.Math.DegToRad(player.angle);
+      player.angle = Phaser.Math.RAD_TO_DEG *
+        Phaser.Math.Angle.RotateTo(current, target, 0.18);
+    }
+
+    if((cursors.space.isDown || wasd.SPACE.isDown) && time > player.lastShot+PLAYER_FIRE_RATE){
+      this._fireBullet(player.x, player.y, this.fireAngle, 'player');
+      player.lastShot = time;
+      this.cameras.main.shake(60, 0.006);
+    }
+  }
+
+  /* ── enemy AI ── */
+  _updateEnemies(time){
+    this.enemies.children.each(e=>{
+      if(!e.active) return;
+      const dx = this.player.x - e.x;
+      const dy = this.player.y - e.y;
+      const dist = Math.sqrt(dx*dx+dy*dy);
+      const angleRad = Math.atan2(dy,dx);
+
+      e.angle = Phaser.Math.RAD_TO_DEG *
+        Phaser.Math.Angle.RotateTo(Phaser.Math.DegToRad(e.angle), angleRad, 0.06);
+
+      e.setAcceleration(Math.cos(angleRad)*e.speed*4, Math.sin(angleRad)*e.speed*4);
+
+      if(time > e.lastShot + e.fireRate){
+        const travelTime = dist / BULLET_SPEED_E;
+        const predX = this.player.x + this.player.body.velocity.x * travelTime;
+        const predY = this.player.y + this.player.body.velocity.y * travelTime;
+        const aimAngle = Phaser.Math.RadToDeg(Math.atan2(predY-e.y, predX-e.x));
+        this._fireBullet(e.x, e.y, aimAngle, 'enemy');
+        e.lastShot = time;
+      }
+    }, this);
+  }
+
+  /* ── fire bullet ── */
+  _fireBullet(x, y, angleDeg, team){
+    const isPlayer = team==='player';
+    const key      = isPlayer ? 'bulletP'       : 'bulletE';
+    const speed    = isPlayer ? BULLET_SPEED_P   : BULLET_SPEED_E;
+    const group    = isPlayer ? this.playerBullets : this.enemyBullets;
+
+    const b = this.physics.add.image(x, y, key);
+    b.setDepth(8);
+    b.setAngle(angleDeg);
+    b.team = team;
+    b.born = this.time.now;
+    group.add(b);
+    this.physics.velocityFromAngle(angleDeg, speed, b.body.velocity);
+    b.body.setAllowGravity(false);
+
+    // muzzle flash
+    const rad = Phaser.Math.DegToRad(angleDeg);
+    const flash = this.add.image(x+Math.cos(rad)*22, y+Math.sin(rad)*22, 'muzzle')
+      .setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
+    this.tweens.add({ targets:flash, alpha:0, scaleX:2, scaleY:2,
+                      duration:80, onComplete:()=>flash.destroy() });
+
+    // auto-destroy
+    b.update = ()=>{
+      if(!b.active) return;
+      if(this.time.now > b.born+1800 ||
+         b.x<-20||b.x>W+20||b.y<-20||b.y>H+20) this._killBullet(b);
+    };
+  }
+
+  _killBullet(b){
+    if(!b||!b.active) return;
+    this._spawnExplosion(b.x, b.y, 'small');
+    b.destroy();
+  }
+
+  /* ── explosions ── */
+  _spawnExplosion(x, y, size='big'){
+    const big      = size==='big';
+    const count    = big ? 18  : 6;
+    const speed    = big ? 280 : 150;
+    const lifespan = big ? 500 : 220;
+
+    const emitter = this.add.particles(x, y, 'spark', {
+      speed    : { min: speed*0.3, max: speed },
+      angle    : { min:0, max:360 },
+      scale    : { start: big?1.2:0.6, end:0 },
+      lifespan,
+      quantity : count,
+      blendMode: Phaser.BlendModes.ADD,
+    });
+    this.time.delayedCall(lifespan+100, ()=> emitter.destroy());
+
+    const smoke = this.add.particles(x, y, 'smoke', {
+      speed    : { min:20, max:60 },
+      angle    : { min:0, max:360 },
+      scale    : { start: big?1.5:0.8, end:2.5 },
+      alpha    : { start:0.6, end:0 },
+      lifespan : big?700:350,
+      quantity : big?8:3,
+    });
+    this.time.delayedCall(800, ()=> smoke.destroy());
+
+    if(big) this.cameras.main.shake(120, 0.014);
+  }
+
+  /* ── collision callbacks ── */
+  _onBulletStone(bullet, stone){
+    if(!bullet.active||!stone.active) return;
+    this._killBullet(bullet);
+    this._spawnExplosion(stone.x, stone.y, 'small');
+    stone.destroy();
+  }
+
+  _onBulletSteel(bullet){
+    if(!bullet.active) return;
+    this._spawnExplosion(bullet.x, bullet.y, 'small');
+    this._killBullet(bullet);
+  }
+
+  _onPlayerBulletEnemy(bullet, enemy){
+    if(!bullet.active||!enemy.active) return;
+    if(bullet.team!=='player') return;
+    this._killBullet(bullet);
+    enemy.hp--;
+    if(enemy.hp<=0){
+      this._spawnExplosion(enemy.x, enemy.y, 'big');
+      enemy.destroy();
+      this.score += 100 * this.wave;
+      const threshold = this.wave * 5;
+      const totalKills = Math.floor(this.score / (100*this.wave));
+      if(totalKills >= threshold && this.wave < 10){
+        this.wave++;
+        this._showWaveBanner();
+      }
+    } else {
+      enemy.setTint(0xffffff);
+      this.time.delayedCall(80, ()=>{ if(enemy.active) enemy.clearTint(); });
+    }
+  }
+
+  _onEnemyBulletPlayer(player, bullet){
+    if(!bullet.active||!player.active) return;
+    if(bullet.team!=='enemy') return;
+    this._killBullet(bullet);
+    this._playerHit();
+  }
+
+  _onBulletsCollide(b1, b2){
+    if(!b1.active||!b2.active) return;
+    if(b1.team===b2.team) return;
+    this._spawnExplosion((b1.x+b2.x)/2,(b1.y+b2.y)/2,'small');
+    b1.destroy(); b2.destroy();
+  }
+
+  _onEnemyRam(player, enemy){
+    if(!player.active||!enemy.active) return;
+    this._playerHit();
+    this._spawnExplosion(enemy.x, enemy.y, 'big');
+    enemy.destroy();
+  }
+
+  /* ── player hit ── */
+  _playerHit(){
+    if(!this.playerAlive) return;
+    this.lives--;
+    this._refreshHUD();
+    this.cameras.main.shake(200, 0.025);
+    this.player.setTint(0xff3333);
+    this.time.delayedCall(300, ()=>{ if(this.player.active) this.player.clearTint(); });
+    if(this.lives<=0) this._playerDie();
+  }
+
+  _playerDie(){
+    if(!this.playerAlive) return;
+    this.playerAlive = false;
+    this._spawnExplosion(this.player.x, this.player.y, 'big');
+    this.player.setActive(false).setVisible(false);
+    this.time.delayedCall(1200, ()=>{
+      this.scene.start('GameOverScene',{ score:this.score, wave:this.wave });
+    });
+  }
+
+  /* ── wave banner ── */
+  _showWaveBanner(){
+    const txt = this.add.text(W/2, H/2, `WAVE ${this.wave}`, {
+      fontSize:'48px', fontFamily:'monospace',
+      color:'#ffff00', stroke:'#000', strokeThickness:8
+    }).setOrigin(0.5).setDepth(60).setAlpha(0);
+
+    this.tweens.add({
+      targets:txt, alpha:1, y:H/2-30, duration:400, ease:'Power2',
+      onComplete:()=>{
+        this.tweens.add({
+          targets:txt, alpha:0, duration:600, delay:600,
+          onComplete:()=>txt.destroy()
+        });
+      }
+    });
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════
+   PHASER CONFIG
+═══════════════════════════════════════════════════════════ */
+new Phaser.Game({
+  type           : Phaser.AUTO,
+  width          : W,
+  height         : H,
+  parent         : 'game-container',
+  backgroundColor: '#0d1f0d',
+  antialias      : false,
+  physics: {
+    default: 'arcade',
+    arcade : { gravity:{ y:0 }, debug:false }
+  },
+  scene: [StartScene, GameScene, GameOverScene]
+});
+</script>
+</body>
+</html>
