@@ -26,6 +26,7 @@ class GameScene extends Phaser.Scene {
     this._buildPlayer();
     this._buildCollisions();
     this._buildHUD();
+    this._buildEmitters();
     this._startSpawner();
 
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -66,8 +67,9 @@ class GameScene extends Phaser.Scene {
   _buildGroups() {
     this.stoneWalls    = this.physics.add.staticGroup();
     this.steelWalls    = this.physics.add.staticGroup();
-    this.playerBullets = this.physics.add.group({ runChildUpdate:true });
-    this.enemyBullets  = this.physics.add.group({ runChildUpdate:true });
+    // maxSize caps pool size; objects are recycled via setActive/setVisible
+    this.playerBullets = this.physics.add.group({ maxSize: 60 });
+    this.enemyBullets  = this.physics.add.group({ maxSize: 80 });
     this.enemies       = this.physics.add.group();
     this.powerups      = this.physics.add.group();
   }
@@ -103,16 +105,22 @@ class GameScene extends Phaser.Scene {
   }
 
   _buildPlayer() {
-    this.player = this.physics.add.sprite(W/2, H - TILE*1.8, 'playerTank');
+    // Physics chassis — drives movement and collision detection
+    this.player = this.physics.add.sprite(W/2, H - TILE*1.8, 'playerChassis');
     this.player.setCollideWorldBounds(true);
     this.player.setDrag(PLAYER_DRAG);
     this.player.setMaxVelocity(PLAYER_SPEED);
     this.player.setDepth(5);
     this.player.lastShot = 0;
-    this.player.body.setCircle(15, 5, 5);  // circle body: slides through gaps cleanly
+    this.player.body.setCircle(15, 5, 5);
+
+    // Turret sprite — independent aim rotation, position synced to chassis each frame
+    this.playerTurret = this.add.sprite(this.player.x, this.player.y, 'playerTurret')
+      .setDepth(6).setOrigin(0.5, 0.5);
+    this.playerTurret.turretRecoil = 0;
 
     this.shieldSprite = this.add.image(0, 0, 'shieldFx')
-      .setDepth(6).setVisible(false).setAlpha(0.85);
+      .setDepth(7).setVisible(false).setAlpha(0.85);
   }
 
   _buildCollisions() {
@@ -232,7 +240,7 @@ class GameScene extends Phaser.Scene {
 
     const pt   = Phaser.Utils.Array.GetRandom(this.spawnPoints);
     const type = this._pickEnemyType();
-    const e    = this.enemies.create(pt.x, pt.y, 'enemy_' + type.id);
+    const e    = this.enemies.create(pt.x, pt.y, 'enemy_' + type.id + '_chassis');
 
     e.setDepth(5).setCollideWorldBounds(true).setDrag(300);
     e.setMaxVelocity(type.maxVel + this.wave * 5);
@@ -243,7 +251,11 @@ class GameScene extends Phaser.Scene {
     e.fireRate  = Math.max(Math.floor(type.fireRate  - this.wave * 60), Math.floor(type.fireRate  * 0.5));
     e.bulletSpd = Math.min(type.bulletSpd + this.wave * 4, 500);
     e.lastShot  = 0;
-    e.body.setCircle(14, 6, 6);  // circle body: slides through gaps cleanly
+    e.body.setCircle(14, 6, 6);
+
+    // Separate turret sprite for independent aiming
+    e.turret = this.add.sprite(e.x, e.y, 'enemy_' + type.id + '_turret')
+      .setDepth(6).setOrigin(0.5, 0.5);
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -254,6 +266,7 @@ class GameScene extends Phaser.Scene {
     if (!this.playerAlive) return;
     this._movePlayer(time);
     this._updateEnemies(time);
+    this._updateBullets(time);
     this._updateShieldSprite();
     this._refreshHUD();
   }
@@ -307,9 +320,23 @@ class GameScene extends Phaser.Scene {
         this._tryPlayerFire(time);
     }
 
-    const aimRad = Phaser.Math.DegToRad(this.fireAngle);
-    const cur    = Phaser.Math.DegToRad(player.angle);
-    player.angle = Phaser.Math.RAD_TO_DEG * Phaser.Math.Angle.RotateTo(cur, aimRad, 0.18);
+    // Chassis rotates toward movement direction; stays put when idle
+    if (ax !== 0 || ay !== 0) {
+      const moveRad    = Math.atan2(ay, ax);
+      const chassisRad = Phaser.Math.DegToRad(player.angle);
+      player.angle = Phaser.Math.RAD_TO_DEG * Phaser.Math.Angle.RotateTo(chassisRad, moveRad, 0.14);
+    }
+
+    // Turret independently tracks aim angle with a recoil offset along the barrel axis
+    const aimRad    = Phaser.Math.DegToRad(this.fireAngle);
+    const turretRad = Phaser.Math.DegToRad(this.playerTurret.angle);
+    this.playerTurret.angle = Phaser.Math.RAD_TO_DEG * Phaser.Math.Angle.RotateTo(turretRad, aimRad, 0.18);
+    const tRad    = Phaser.Math.DegToRad(this.playerTurret.angle);
+    const recoil  = (this.playerTurret.turretRecoil || 0) * 4;
+    this.playerTurret.setPosition(
+      player.x - Math.cos(tRad) * recoil,
+      player.y - Math.sin(tRad) * recoil
+    );
   }
 
   /* effective fire interval in ms (lower = faster) */
@@ -327,15 +354,29 @@ class GameScene extends Phaser.Scene {
     const player = this.player;
     if (time <= player.lastShot + this._currentFireRate()) return;
 
+    // Barrel tip in world space
+    const rad  = Phaser.Math.DegToRad(this.playerTurret.angle);
+    const tipX = this.playerTurret.x + Math.cos(rad) * 18;
+    const tipY = this.playerTurret.y + Math.sin(rad) * 18;
+
     if (this.stacks.tripleshot > 0) {
-      this._fireBullet(player.x, player.y, this.fireAngle - 15, 'player');
-      this._fireBullet(player.x, player.y, this.fireAngle,      'player');
-      this._fireBullet(player.x, player.y, this.fireAngle + 15, 'player');
+      this._fireBullet(tipX, tipY, this.fireAngle - 15, 'player');
+      this._fireBullet(tipX, tipY, this.fireAngle,      'player');
+      this._fireBullet(tipX, tipY, this.fireAngle + 15, 'player');
     } else {
-      this._fireBullet(player.x, player.y, this.fireAngle, 'player');
+      this._fireBullet(tipX, tipY, this.fireAngle, 'player');
     }
 
     player.lastShot = time;
+
+    // Recoil: spring turret back 4 px then return to rest
+    this.playerTurret.turretRecoil = 1;
+    this.tweens.add({ targets: this.playerTurret, turretRecoil: 0, duration: 150, ease: 'Power2Out' });
+
+    // Brief point-light flash at muzzle
+    const muzzleLight = this.add.pointlight(tipX, tipY, 0xffbb44, 80, 1.2);
+    this.time.delayedCall(80, () => muzzleLight.destroy());
+
     this.cameras.main.shake(60, 0.006);
     SoundFX.playerShoot();
   }
@@ -362,11 +403,52 @@ class GameScene extends Phaser.Scene {
         const predX    = this.player.x + this.player.body.velocity.x * travelT * acc;
         const predY    = this.player.y + this.player.body.velocity.y * travelT * acc;
         const aimAngle = Phaser.Math.RadToDeg(Math.atan2(predY - e.y, predX - e.x));
-        this._fireBullet(e.x, e.y, aimAngle, 'enemy', e.bulletSpd, e.enemyType.damage);
+        // Spawn from barrel tip
+        const eRad = Phaser.Math.DegToRad(aimAngle);
+        this._fireBullet(e.x + Math.cos(eRad)*18, e.y + Math.sin(eRad)*18, aimAngle, 'enemy', e.bulletSpd, e.enemyType.damage);
         SoundFX.enemyShoot();
         e.lastShot = time;
       }
+
+      // Sync turret sprite: position on chassis + rotate toward player
+      if (e.turret) {
+        const turretRad = Phaser.Math.DegToRad(e.turret.angle);
+        e.turret.angle  = Phaser.Math.RAD_TO_DEG *
+          Phaser.Math.Angle.RotateTo(turretRad, angleRad, e.enemyType.rotateSp * 1.5);
+        e.turret.setPosition(e.x, e.y);
+      }
     }, this);
+  }
+
+  /* ══════════════════════════════════════════════════════════
+     PARTICLE EMITTERS  (created once, reused every explosion)
+  ══════════════════════════════════════════════════════════ */
+  _buildEmitters() {
+    const base = { angle:{ min:0, max:360 }, blendMode:Phaser.BlendModes.ADD };
+
+    this._bigSparkFx = this.add.particles(0, 0, 'spark', {
+      ...base, speed:{ min:85, max:280 }, scale:{ start:1.2, end:0 }, lifespan:500,
+    }).setDepth(12).stop();
+
+    this._smallSparkFx = this.add.particles(0, 0, 'spark', {
+      ...base, speed:{ min:45, max:150 }, scale:{ start:0.6, end:0 }, lifespan:220,
+    }).setDepth(12).stop();
+
+    this._bigSmokeFx = this.add.particles(0, 0, 'smoke', {
+      angle:{ min:0, max:360 }, speed:{ min:20, max:60 },
+      scale:{ start:1.5, end:2.5 }, alpha:{ start:0.55, end:0 }, lifespan:700,
+    }).setDepth(11).stop();
+
+    this._smallSmokeFx = this.add.particles(0, 0, 'smoke', {
+      angle:{ min:0, max:360 }, speed:{ min:15, max:40 },
+      scale:{ start:0.8, end:2.0 }, alpha:{ start:0.5, end:0 }, lifespan:350,
+    }).setDepth(11).stop();
+
+    // Bullet smoke trail — 1 particle emitted per bullet every 40 ms
+    this._trailFx = this.add.particles(0, 0, 'smoke', {
+      angle:{ min:0, max:360 }, speed:{ min:4, max:18 },
+      scale:{ start:0.18, end:0.55 }, alpha:{ start:0.30, end:0 }, lifespan:200,
+    }).setDepth(7).stop();
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -376,32 +458,54 @@ class GameScene extends Phaser.Scene {
     const isPlayer = team === 'player';
     const speed    = customSpeed ?? (isPlayer ? this._currentBulletSpeed() : 240);
     const group    = isPlayer ? this.playerBullets : this.enemyBullets;
+    const tex      = isPlayer ? 'bulletP' : 'bulletE';
 
-    const b = this.physics.add.image(x, y, isPlayer ? 'bulletP' : 'bulletE');
-    b.setDepth(8).setAngle(angleDeg);
-    b.team   = team;
-    b.damage = damage;
-    b.born = this.time.now;
-    group.add(b);
-    this.physics.velocityFromAngle(angleDeg, speed, b.body.velocity);
+    const b = group.get(x, y, tex);
+    if (!b) return;
+    b.setActive(true).setVisible(true).setTexture(tex).setDepth(8).setAngle(angleDeg);
+    b.team      = team;
+    b.damage    = damage;
+    b.born      = this.time.now;
+    b._lastTrail = 0;
+    b.body.reset(x, y);
     b.body.setAllowGravity(false);
+    this.physics.velocityFromAngle(angleDeg, speed, b.body.velocity);
 
+    // Glow added once per pool slot (persists across recycles)
+    if (b.preFX && !b._glow) {
+      b._glow = b.preFX.addGlow(isPlayer ? 0xffff44 : 0xff3300, 2, 0, false);
+    }
+
+    // Small muzzle flash at spawn point
     const rad   = Phaser.Math.DegToRad(angleDeg);
-    const flash = this.add.image(x + Math.cos(rad)*22, y + Math.sin(rad)*22, 'muzzle')
+    const flash = this.add.image(x + Math.cos(rad)*5, y + Math.sin(rad)*5, 'muzzle')
       .setDepth(9).setBlendMode(Phaser.BlendModes.ADD);
     this.tweens.add({ targets:flash, alpha:0, scaleX:2, scaleY:2, duration:80, onComplete:()=>flash.destroy() });
-
-    b.update = () => {
-      if (!b.active) return;
-      if (this.time.now > b.born + 1800 || b.x < -20 || b.x > W+20 || b.y < -20 || b.y > H+20)
-        this._killBullet(b);
-    };
   }
 
+  // return bullet to pool instead of destroying it
   _killBullet(b) {
     if (!b || !b.active) return;
     this._spawnExplosion(b.x, b.y, 'small');
-    b.destroy();
+    b.setActive(false).setVisible(false);
+    b.body.reset(-200, -200);
+  }
+
+  // called each frame to cull out-of-bounds / expired bullets and emit smoke trail
+  _updateBullets(time) {
+    const cull = b => {
+      if (!b.active) return;
+      if (time > b.born + 1800 || b.x < -20 || b.x > W+20 || b.y < -20 || b.y > H+20) {
+        this._killBullet(b);
+        return;
+      }
+      if (time > (b._lastTrail || 0) + 40) {
+        this._trailFx.explode(1, b.x, b.y);
+        b._lastTrail = time;
+      }
+    };
+    this.playerBullets.children.each(cull);
+    this.enemyBullets.children.each(cull);
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -490,24 +594,29 @@ class GameScene extends Phaser.Scene {
      EXPLOSIONS
   ══════════════════════════════════════════════════════════ */
   _spawnExplosion(x, y, size = 'big') {
-    const big      = size === 'big';
-    const count    = big ? 18 :  6;
-    const speed    = big ? 280 : 150;
-    const lifespan = big ? 500 : 220;
+    const big = size === 'big';
 
-    const emitter = this.add.particles(x, y, 'spark', {
-      speed:{ min:speed*0.3, max:speed }, angle:{ min:0, max:360 },
-      scale:{ start:big?1.2:0.6, end:0 }, lifespan, quantity:count,
-      blendMode:Phaser.BlendModes.ADD,
-    });
-    this.time.delayedCall(lifespan+100, () => emitter.destroy());
+    // pooled emitters — explode() fires a one-shot burst at (x, y)
+    if (big) {
+      this._bigSparkFx.explode(18, x, y);
+      this._bigSmokeFx.explode(8,  x, y);
+    } else {
+      this._smallSparkFx.explode(6, x, y);
+      this._smallSmokeFx.explode(3, x, y);
+    }
 
-    const smoke = this.add.particles(x, y, 'smoke', {
-      speed:{ min:20, max:60 }, angle:{ min:0, max:360 },
-      scale:{ start:big?1.5:0.8, end:2.5 },
-      alpha:{ start:0.6, end:0 }, lifespan:big?700:350, quantity:big?8:3,
+    // shockwave ring — expands and fades
+    const ring = this.add.image(x, y, 'shockwave')
+      .setDepth(13).setBlendMode(Phaser.BlendModes.ADD)
+      .setAlpha(0.9).setScale(0.15);
+    this.tweens.add({
+      targets: ring,
+      scale: big ? 4 : 2,
+      alpha: 0,
+      duration: big ? 380 : 200,
+      ease: 'Power2Out',
+      onComplete: () => ring.destroy(),
     });
-    this.time.delayedCall(800, () => smoke.destroy());
 
     if (big) this.cameras.main.shake(120, 0.014);
   }
@@ -541,11 +650,15 @@ class GameScene extends Phaser.Scene {
       this._spawnPowerUp(enemy.x, enemy.y);
       this.score += enemy.enemyType.points * this.wave;
       this.kills++;
+      if (enemy.turret) { enemy.turret.destroy(); enemy.turret = null; }
       enemy.destroy();
       this._checkWaveAdvance();
     } else {
       enemy.setTint(0xffffff);
-      this.time.delayedCall(80, () => { if (enemy.active) enemy.clearTint(); });
+      if (enemy.turret) enemy.turret.setTint(0xffffff);
+      this.time.delayedCall(80, () => {
+        if (enemy.active) { enemy.clearTint(); if (enemy.turret) enemy.turret.clearTint(); }
+      });
     }
   }
 
@@ -572,6 +685,7 @@ class GameScene extends Phaser.Scene {
     this._spawnPowerUp(enemy.x, enemy.y);
     this.score += enemy.enemyType.points * this.wave;
     this.kills++;
+    if (enemy.turret) { enemy.turret.destroy(); enemy.turret = null; }
     enemy.destroy();
     this._checkWaveAdvance();
     if (this.stacks.shield > 0) this._absorbWithShield();
@@ -616,9 +730,15 @@ class GameScene extends Phaser.Scene {
     if (!this.playerAlive) return;
     this.playerHp -= dmg;
     SoundFX.playerHit();
-    this.cameras.main.shake(200, 0.025);
-    this.player.setTint(0xff3333);
-    this.time.delayedCall(300, () => { if (this.player.active) this.player.clearTint(); });
+    // shake intensity scales with hit damage; subtle red tint feedback
+    const shakeAmt = 0.006 + (dmg / 100) * 0.010;
+    this.cameras.main.shake(120, shakeAmt);
+    this.cameras.main.flash(60, 255, 0, 0, false);
+    this.player.setTint(0xff6666);
+    this.playerTurret.setTint(0xff6666);
+    this.time.delayedCall(180, () => {
+      if (this.player.active) { this.player.clearTint(); this.playerTurret.clearTint(); }
+    });
     if (this.playerHp <= 0) this._playerDie();
   }
 
@@ -629,6 +749,7 @@ class GameScene extends Phaser.Scene {
     this.time.delayedCall(400, () => SoundFX.gameOver());
     this._spawnExplosion(this.player.x, this.player.y, 'big');
     this.player.setActive(false).setVisible(false);
+    this.playerTurret.setVisible(false);
     this.time.delayedCall(1200, () => {
       this.scene.start('GameOverScene', { score:this.score, wave:this.wave });
     });

@@ -53,8 +53,8 @@ function createTextures(scene) {
   });
   g.generateTexture('steel', S, S); g.clear();
 
-  /* ── tank sprite builder ── */
-  const drawTank = (bodyCol, darkCol, turrCol, trackCol, key) => {
+  /* ── tank chassis builder (tracks, hull, wheels — no turret) ── */
+  const drawChassis = (bodyCol, darkCol, trackCol, key) => {
     const TW = 40, TH = 40;
     // ground shadow
     g.fillStyle(0x000000, 0.22); g.fillEllipse(TW/2+2, TH/2+3, TW-2, TH-14);
@@ -89,6 +89,12 @@ function createTextures(scene) {
       g.fillStyle(darkCol); g.fillCircle(rx, ry, 1.8);
       g.fillStyle(0xffffff, 0.25); g.fillCircle(rx-0.5, ry-0.5, 0.8);
     });
+    g.generateTexture(key, TW, TH); g.clear();
+  };
+
+  /* ── tank turret builder (transparent bg, origin at centre 20,20) ── */
+  const drawTurret = (turrCol, darkCol, key) => {
+    const TW = 40, TH = 40;
     // turret shadow + dome
     g.fillStyle(0x000000, 0.28); g.fillCircle(TW/2+1, TH/2+1, 9.5);
     g.fillStyle(turrCol); g.fillCircle(TW/2, TH/2, 9);
@@ -111,15 +117,16 @@ function createTextures(scene) {
     g.fillStyle(darkCol); g.fillCircle(TW/2-2, TH/2-2, 3.5);
     g.fillStyle(turrCol); g.fillCircle(TW/2-2, TH/2-2, 2.5);
     g.fillStyle(0xffffff, 0.2); g.fillCircle(TW/2-3, TH/2-3, 1);
-    g.generateTexture(key, TW, TH);
-    g.clear();
+    g.generateTexture(key, TW, TH); g.clear();
   };
 
-  drawTank(COL.P_BODY, COL.P_DARK, COL.P_TURR, COL.TRACK, 'playerTank');
+  drawChassis(COL.P_BODY, COL.P_DARK, COL.TRACK, 'playerChassis');
+  drawTurret(COL.P_TURR, COL.P_DARK, 'playerTurret');
 
-  /* one texture per enemy variant */
+  /* one chassis + turret texture per enemy variant */
   ENEMY_TYPES.forEach(t => {
-    drawTank(t.bodyCol, t.darkCol, t.turrCol, t.trackCol, 'enemy_' + t.id);
+    drawChassis(t.bodyCol, t.darkCol, t.trackCol, 'enemy_' + t.id + '_chassis');
+    drawTurret(t.turrCol,  t.darkCol,              'enemy_' + t.id + '_turret');
   });
 
   /* ── player bullet ── */
@@ -218,6 +225,11 @@ function createTextures(scene) {
     g.fillTriangle(R+3, R+13, R+10, R+8, R+4, R+6);
     g.generateTexture('powerup_tripleshot', R*2, R*2); g.clear();
   }
+
+  /* ── shockwave ring (explosion effect) ── */
+  g.lineStyle(5, 0xffffff, 1.0); g.strokeCircle(24, 24, 22);
+  g.lineStyle(2, 0xffaa44, 0.7); g.strokeCircle(24, 24, 18);
+  g.generateTexture('shockwave', 48, 48); g.clear();
 
   /* ── shield ring (shown around player while stacks active) ── */
   g.lineStyle(6, 0x3498db, 0.18); g.strokeCircle(20, 20, 21);  // outer glow
