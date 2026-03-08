@@ -63,7 +63,11 @@ class GameScene extends Phaser.Scene {
     this.cameras.main.setBounds(0, 0, W, H);
     this.physics.world.setBounds(0, 0, W, H);
 
-    // Show the first map banner on game start
+    // Fade in from black — makes every map start feel fresh
+    this.cameras.main.fadeFrom(700, 0, 0, 0);
+
+    // Dramatic intro banner; blocks gameplay until it clears
+    this._gameReady = false;
     this._showMapBanner();
   }
 
@@ -238,6 +242,7 @@ class GameScene extends Phaser.Scene {
   }
 
   _spawnEnemy() {
+    if (!this._gameReady) return;
     if (this.enemies.countActive(true) >= MAX_ENEMIES) return;
     if (!this.playerAlive) return;
 
@@ -266,6 +271,7 @@ class GameScene extends Phaser.Scene {
   ══════════════════════════════════════════════════════════ */
   update(time) {
     if (this.isPaused) return;
+    if (!this._gameReady) return;
     if (!this.playerAlive) return;
     this._movePlayer(time);
     this._updateEnemies(time);
@@ -730,27 +736,57 @@ class GameScene extends Phaser.Scene {
 
   _showMapBanner() {
     const mapDef = MAPS[this.mapIndex];
-    const strip  = this.add.rectangle(W/2, H/2, W, 96, 0x000000, 0.82)
-      .setDepth(59).setScrollFactor(0).setAlpha(0);
-    const txt = this.add.text(W/2, H/2 - 14,
-      `MAP ${this.mapIndex + 1} / ${MAPS.length}  —  ${mapDef.name}`, {
-        fontSize:'34px', fontFamily:'monospace',
-        color:'#ffff00', stroke:'#000000', strokeThickness:8
-      }).setOrigin(0.5).setDepth(60).setAlpha(0);
-    const sub = this.add.text(W/2, H/2 + 24,
-      `Eliminate ${KILLS_PER_MAP} enemies to advance`, {
-        fontSize:'16px', fontFamily:'monospace',
-        color:'#aaffaa', stroke:'#000', strokeThickness:4
-      }).setOrigin(0.5).setDepth(60).setAlpha(0);
+    const cx = W / 2, cy = H / 2;
+    const D   = 55;   /* depth above everything */
 
-    this.tweens.add({
-      targets:[strip, txt, sub], alpha:1, duration:300, ease:'Power2',
-      onComplete: () => {
-        this.tweens.add({
-          targets:[strip, txt, sub], alpha:0, duration:500, delay:1400,
-          onComplete: () => { strip.destroy(); txt.destroy(); sub.destroy(); }
-        });
-      }
+    /* full black cover */
+    const cover = this.add.rectangle(0, 0, W, H, 0x000000)
+      .setOrigin(0).setDepth(D).setAlpha(1);
+
+    /* mission number — small label */
+    const lbl = this.add.text(cx, cy - 72,
+      `MISSION  ${this.mapIndex + 1}  /  ${MAPS.length}`, {
+        fontSize:'15px', fontFamily:'monospace', color:'#445544',
+      }).setOrigin(0.5).setDepth(D+1).setAlpha(0);
+
+    /* map name — punches in */
+    const name = this.add.text(cx, cy - 20, mapDef.name.toUpperCase(), {
+      fontSize:'46px', fontFamily:'monospace',
+      color:'#ffff00', stroke:'#000', strokeThickness:10,
+      shadow:{ offsetX:0, offsetY:0, color:'#ffff00', blur:20, fill:false },
+    }).setOrigin(0.5).setDepth(D+1).setScale(0.5).setAlpha(0);
+
+    /* objective */
+    const obj = this.add.text(cx, cy + 38,
+      `Eliminate  ${KILLS_PER_MAP}  enemy units`, {
+        fontSize:'16px', fontFamily:'monospace',
+        color:'#88ffaa', stroke:'#000', strokeThickness:4,
+      }).setOrigin(0.5).setDepth(D+1).setAlpha(0);
+
+    /* expanding rule */
+    const rule = this.add.rectangle(cx, cy + 66, 0, 2, 0xffff00)
+      .setOrigin(0.5).setDepth(D+1);
+
+    /* stagger in */
+    this.tweens.add({ targets:lbl,  alpha:1, duration:250, delay:300 });
+    this.tweens.add({ targets:name, alpha:1, scaleX:1, scaleY:1, duration:320, delay:500, ease:'Back.Out' });
+    this.tweens.add({ targets:obj,  alpha:1, duration:250, delay:820 });
+    this.tweens.add({ targets:rule, width:320, duration:350, delay:820, ease:'Power2' });
+
+    /* dismiss — cover fades out, gameplay unlocks */
+    const dismiss = () => {
+      this._gameReady = true;
+      [cover, lbl, name, obj, rule].forEach(o =>
+        this.tweens.add({ targets:o, alpha:0, duration:400,
+          onComplete: () => { if (o.active) o.destroy(); } })
+      );
+    };
+
+    /* auto-dismiss after 2.4 s, or immediately on Space/click */
+    this.time.delayedCall(2400, dismiss);
+    this.time.delayedCall(900, () => {
+      this.input.keyboard.once('keydown-SPACE', dismiss);
+      this.input.once('pointerdown', dismiss);
     });
   }
 
