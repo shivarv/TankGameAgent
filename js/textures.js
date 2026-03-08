@@ -1,7 +1,9 @@
 /* =============================================================
    TEXTURE FACTORY  —  called once at the start of GameScene
 ============================================================= */
-function createTextures(scene) {
+import { COL, TILE, ENEMY_TYPES } from './config.js';
+
+export function createTextures(scene) {
   const g = scene.make.graphics({ add: false });
 
   /* ── floor tile ── */

@@ -1,7 +1,10 @@
 /* =============================================================
    START SCENE
 ============================================================= */
-class StartScene extends Phaser.Scene {
+import Phaser from 'phaser';
+import { W, H } from '../config.js';
+
+export default class StartScene extends Phaser.Scene {
   constructor() { super('StartScene'); }
 
   create() {

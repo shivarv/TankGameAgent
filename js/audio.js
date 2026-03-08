@@ -7,7 +7,7 @@
    Mute:
      SoundFX.muted     toggle with SoundFX.toggleMute()
 ============================================================= */
-const SoundFX = (() => {
+export const SoundFX = (() => {
 
   /* ── state ── */
   let _ctx  = null;

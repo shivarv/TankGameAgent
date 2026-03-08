@@ -3,7 +3,11 @@
    Phase 1 (0–2.2s): MISSION COMPLETE stamp + score
    Phase 2 (2.2s+):  tactical briefing panel slides up
 ============================================================= */
-class MapClearScene extends Phaser.Scene {
+import Phaser from 'phaser';
+import { W, H, PLAYER_HP } from '../config.js';
+import { MAPS, KILLS_PER_MAP } from '../maps.js';
+
+export default class MapClearScene extends Phaser.Scene {
   constructor() { super('MapClearScene'); }
 
   init(d) {

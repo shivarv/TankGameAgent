@@ -1,7 +1,10 @@
 /* =============================================================
    GAME OVER SCENE
 ============================================================= */
-class GameOverScene extends Phaser.Scene {
+import Phaser from 'phaser';
+import { W, H } from '../config.js';
+
+export default class GameOverScene extends Phaser.Scene {
   constructor() { super('GameOverScene'); }
   init(d) {
     this.finalScore = d.score   || 0;

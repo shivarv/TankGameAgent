@@ -3,33 +3,33 @@
 ============================================================= */
 
 /* ── world ── */
-const TILE     = 40;
-const MAP_COLS = 18;
-const MAP_ROWS = 14;
-const W        = MAP_COLS * TILE;   // 720
-const H        = MAP_ROWS * TILE;   // 560
+export const TILE     = 40;
+export const MAP_COLS = 18;
+export const MAP_ROWS = 14;
+export const W        = MAP_COLS * TILE;   // 720
+export const H        = MAP_ROWS * TILE;   // 560
 
 /* ── player ── */
-const PLAYER_SPEED     = 180;
-const PLAYER_ACCEL     = 600;
-const PLAYER_DRAG      = 500;
-const BULLET_SPEED_P   = 520;
-const PLAYER_FIRE_RATE = 250;   // ms between shots (lower = faster)
+export const PLAYER_SPEED     = 180;
+export const PLAYER_ACCEL     = 600;
+export const PLAYER_DRAG      = 500;
+export const BULLET_SPEED_P   = 520;
+export const PLAYER_FIRE_RATE = 250;   // ms between shots (lower = faster)
 
 /* ── enemies (base, scaled per wave) ── */
-const MAX_ENEMIES = 8;
+export const MAX_ENEMIES = 8;
 
 /* ── player health ── */
-const PLAYER_HP         = 100;  // starting HP
-const PLAYER_MAX_HP     = 300;  // maximum HP (stackable via +HP pickups)
-const PLAYER_HIT_DAMAGE =  25;  // default damage per hit (weak enemies)
+export const PLAYER_HP         = 100;  // starting HP
+export const PLAYER_MAX_HP     = 300;  // maximum HP (stackable via +HP pickups)
+export const PLAYER_HIT_DAMAGE =  25;  // default damage per hit (weak enemies)
 
 /* ── power-ups ── */
-const POWERUP_DROP_CHANCE = 0.45;   // probability a slain enemy drops a power-up
-const POWERUP_HEAL_AMOUNT =  25;    // HP restored by +HP pickup
+export const POWERUP_DROP_CHANCE = 0.45;   // probability a slain enemy drops a power-up
+export const POWERUP_HEAL_AMOUNT =  25;    // HP restored by +HP pickup
 
 /* hard caps — maximum stacks for each effect (all stacks are now permanent) */
-const POWERUP_CAPS = {
+export const POWERUP_CAPS = {
   health    : PLAYER_MAX_HP,  // HP cap (300)
   speed     : 3,   // +30 % move speed per stack  → max +90 %
   bulletspd : 3,   // +25 % bullet speed per stack → max +75 %
@@ -39,14 +39,14 @@ const POWERUP_CAPS = {
 };
 
 /* effect magnitude per stack (for numeric effects) */
-const POWERUP_PER_STACK = {
+export const POWERUP_PER_STACK = {
   speed     : 0.30,   // fraction of PLAYER_SPEED added per stack
   bulletspd : 0.25,   // fraction of BULLET_SPEED_P added per stack
   rapidfire : 0.22,   // fraction of PLAYER_FIRE_RATE subtracted per stack
 };
 
 /* ── colour palette ── */
-const COL = {
+export const COL = {
   FLOOR_A : 0x1a2a1a,
   FLOOR_B : 0x1e2e1e,
   STONE   : 0x8b6343,
@@ -74,7 +74,7 @@ const COL = {
    damage    : HP % dealt per bullet/ram hit to player
    points    : score awarded on kill
 ─────────────────────────────────────────────────────────── */
-const ENEMY_TYPES = [
+export const ENEMY_TYPES = [
   {
     id        : 'scout',
     label     : 'Scout',
@@ -171,7 +171,7 @@ const ENEMY_TYPES = [
    col    : icon background colour (also used in HUD text)
    stackCap references POWERUP_CAPS[id]
 ─────────────────────────────────────────────────────────── */
-const POWERUP_TYPES = [
+export const POWERUP_TYPES = [
   { id:'health',     label:'+HP',  col:0x2ecc40 },  // instant: +1 life
   { id:'speed',      label:'SPD',  col:0xf39c12 },  // timed: move speed boost
   { id:'bulletspd',  label:'BLT',  col:0xe74c3c },  // timed: bullet speed boost

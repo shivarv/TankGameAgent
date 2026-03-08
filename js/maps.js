@@ -5,9 +5,9 @@
    . = open floor
    Spawn points (top-left, top-center, top-right) must stay open.
 ============================================================= */
-const KILLS_PER_MAP = 20;
+export const KILLS_PER_MAP = 20;
 
-const MAPS = [
+export const MAPS = [
   /* ── 1 ── Outpost Alpha ── scattered cover, original layout */
   {
     name: 'Outpost Alpha',

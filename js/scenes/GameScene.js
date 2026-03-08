@@ -1,7 +1,19 @@
 /* =============================================================
    GAME SCENE
 ============================================================= */
-class GameScene extends Phaser.Scene {
+import Phaser from 'phaser';
+import {
+  TILE, MAP_COLS, MAP_ROWS, W, H,
+  PLAYER_SPEED, PLAYER_ACCEL, PLAYER_DRAG, BULLET_SPEED_P, PLAYER_FIRE_RATE,
+  MAX_ENEMIES, PLAYER_HP, PLAYER_MAX_HP, PLAYER_HIT_DAMAGE,
+  POWERUP_DROP_CHANCE, POWERUP_HEAL_AMOUNT, POWERUP_CAPS, POWERUP_PER_STACK,
+  ENEMY_TYPES, POWERUP_TYPES,
+} from '../config.js';
+import { MAPS, KILLS_PER_MAP } from '../maps.js';
+import { SoundFX } from '../audio.js';
+import { createTextures } from '../textures.js';
+
+export default class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
   /* resume data injected by MapClearScene (or empty on fresh start) */

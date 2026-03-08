@@ -1,6 +1,10 @@
-/* =============================================================
-   PHASER BOOTSTRAP
-============================================================= */
+import Phaser from 'phaser';
+import { W, H } from './config.js';
+import StartScene    from './scenes/StartScene.js';
+import GameScene     from './scenes/GameScene.js';
+import GameOverScene from './scenes/GameOverScene.js';
+import MapClearScene from './scenes/MapClearScene.js';
+
 new Phaser.Game({
   type           : Phaser.AUTO,
   width          : W,
@@ -12,5 +16,5 @@ new Phaser.Game({
     default: 'arcade',
     arcade : { gravity:{ y:0 }, debug:false }
   },
-  scene: [StartScene, GameScene, GameOverScene, MapClearScene]
+  scene: [StartScene, GameScene, GameOverScene, MapClearScene],
 });
