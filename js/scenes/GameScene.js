@@ -163,27 +163,25 @@ export default class GameScene extends Phaser.Scene {
   ══════════════════════════════════════════════════════════ */
   _buildHUD() {
     // dark backing panel behind left-side HUD
-    this.add.rectangle(0, 0, 168, 152, 0x000000, 0.52)
+    this.add.rectangle(0, 0, 168, 128, 0x000000, 0.52)
       .setDepth(49).setScrollFactor(0).setOrigin(0, 0);
 
-    const st  = { fontSize:'18px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:4 };
-    const sm  = { fontSize:'13px', fontFamily:'monospace', color:'#aaffaa', stroke:'#000', strokeThickness:3 };
-    this.hudScore  = this.add.text(12, 10, 'Score: 0', st).setDepth(50).setScrollFactor(0);
-    this.hudWave   = this.add.text(12, 34, 'Map: 1/10', st).setDepth(50).setScrollFactor(0);
-    this.hudMapName = this.add.text(12, 54, MAPS[0].name, sm).setDepth(50).setScrollFactor(0);
+    const st = { fontSize:'18px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:4 };
+    this.hudScore = this.add.text(12, 10, 'Score: 0', st).setDepth(50).setScrollFactor(0);
+    this.hudWave  = this.add.text(12, 34, 'Map: 1/10', st).setDepth(50).setScrollFactor(0);
     // HP bar
-    this.add.rectangle(12, 72, 144, 16, 0x330000).setDepth(50).setScrollFactor(0).setOrigin(0, 0);
-    this.hudHpBar  = this.add.rectangle(12, 72, 144, 16, 0x22cc44).setDepth(51).setScrollFactor(0).setOrigin(0, 0);
-    this.hudHpText = this.add.text(84, 80, '100%', {
+    this.add.rectangle(12, 58, 144, 16, 0x330000).setDepth(50).setScrollFactor(0).setOrigin(0, 0);
+    this.hudHpBar  = this.add.rectangle(12, 58, 144, 16, 0x22cc44).setDepth(51).setScrollFactor(0).setOrigin(0, 0);
+    this.hudHpText = this.add.text(84, 66, '100%', {
       fontSize:'11px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:3
     }).setDepth(52).setScrollFactor(0).setOrigin(0.5, 0.5);
-    this.hudKills = this.add.text(12, 92, 'Kills: 0/20', {
+    this.hudKills = this.add.text(12, 78, 'Kills: 0/20', {
       fontSize:'12px', fontFamily:'monospace', color:'#ffdd88', stroke:'#000', strokeThickness:3
     }).setDepth(50).setScrollFactor(0);
-    this.hudMode  = this.add.text(12, 110, '', {
+    this.hudMode  = this.add.text(12, 96, '', {
       fontSize:'12px', fontFamily:'monospace', color:'#aaffaa', stroke:'#000', strokeThickness:3
     }).setDepth(50).setScrollFactor(0);
-    this.hudMute  = this.add.text(12, 127, '', {
+    this.hudMute  = this.add.text(12, 112, '', {
       fontSize:'12px', fontFamily:'monospace', color:'#888888', stroke:'#000', strokeThickness:3
     }).setDepth(50).setScrollFactor(0);
 
@@ -209,7 +207,6 @@ export default class GameScene extends Phaser.Scene {
   _refreshHUD() {
     this.hudScore.setText('Score: ' + this.score);
     this.hudWave.setText (`Map: ${this.mapIndex + 1}/10`);
-    this.hudMapName.setText(MAPS[this.mapIndex].name);
     this.hudKills.setText(`Kills: ${this.kills}/${KILLS_PER_MAP}`);
 
     // HP bar (scales against PLAYER_MAX_HP so overheal shows correctly)
@@ -255,6 +252,7 @@ export default class GameScene extends Phaser.Scene {
 
   _spawnEnemy() {
     if (!this._gameReady) return;
+    if (this.kills >= KILLS_PER_MAP) return;   // quota reached — no more spawns
     if (this.enemies.countActive(true) >= MAX_ENEMIES) return;
     if (!this.playerAlive) return;
 
@@ -718,7 +716,8 @@ export default class GameScene extends Phaser.Scene {
   ══════════════════════════════════════════════════════════ */
   _checkMapAdvance() {
     if (this.kills < KILLS_PER_MAP) return;
-    if (this._mapAdvancing) return;   // prevent double-trigger
+    if (this.enemies.countActive(true) > 0) return;  // wait for last tank to die
+    if (this._mapAdvancing) return;
     this._mapAdvancing = true;
 
     SoundFX.waveUp();
