@@ -109,12 +109,21 @@ const SoundFX = (() => {
       _noise(t,             0.055,   0.12, 2800);
     },
 
-    /* ── bullet hits a wall ── */
+    /* ── bullet hits a steel wall ── */
     wallHit() {
       if (muted || !_throttle('wallHit', 70)) return;
       const t = now();
       _noise(t, 0.08, 0.28, 1800);
       _osc(180, 'sine', t, 0.06, 0.15, 70);
+    },
+
+    /* ── bullet hits a brick/stone wall (lower, chunkier crumble) ── */
+    brickHit() {
+      if (muted || !_throttle('brickHit', 70)) return;
+      const t = now();
+      _noise(t, 0.22, 0.42, 650);          // earthy low-pass rumble
+      _osc(72, 'sine',     t, 0.18, 0.32, 28);  // deep thud
+      _noise(t + 0.04, 0.10, 0.18, 2200);  // brief stone-chip crack
     },
 
     /* ── small explosion (bullet destroyed mid-air / bullet collision) ── */

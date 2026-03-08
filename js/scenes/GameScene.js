@@ -187,10 +187,10 @@ class GameScene extends Phaser.Scene {
 
     // HP bar (scales against PLAYER_MAX_HP so overheal shows correctly)
     const hpFrac  = Math.max(this.playerHp, 0) / PLAYER_MAX_HP;
-    const barW    = Math.round(144 * hpFrac);
-    this.hudHpBar.width = barW;
+    const barW    = Math.max(Math.round(144 * hpFrac), 1);
     const baseFrac = this.playerHp / PLAYER_HP;
-    this.hudHpBar.fillColor = baseFrac > 1 ? 0x44aaff : baseFrac > 0.5 ? 0x22cc44 : baseFrac > 0.25 ? 0xffaa00 : 0xff2222;
+    const barCol  = baseFrac > 1 ? 0x44aaff : baseFrac > 0.5 ? 0x22cc44 : baseFrac > 0.25 ? 0xffaa00 : 0xff2222;
+    this.hudHpBar.setSize(barW, 16).setFillStyle(barCol);
     this.hudHpText.setText(Math.max(this.playerHp, 0) + '%');
 
     this.hudMode.setText(
@@ -517,7 +517,7 @@ class GameScene extends Phaser.Scene {
   ══════════════════════════════════════════════════════════ */
   _onBulletStone(bullet, stone) {
     if (!bullet.active || !stone.active) return;
-    SoundFX.wallHit();
+    SoundFX.brickHit();
     this._killBullet(bullet);
     this._spawnExplosion(stone.x, stone.y, 'small');
     stone.destroy();
