@@ -10,16 +10,14 @@ class GameScene extends Phaser.Scene {
   create() {
     this.score       = 0;
     this.wave        = 1;
-    this.lives       = 3;
+    this.playerHp    = PLAYER_HP;
     this.kills       = 0;
     this.playerAlive = true;
     this.fireAngle   = 0;
     this.controlMode = 'keyboard';  // 'keyboard' | 'mouse'
 
-    // stacks[id] = current active stack count (0 = inactive)
-    this.stacks   = { speed:0, bulletspd:0, rapidfire:0, shield:0, tripleshot:0 };
-    // stackEnd[id] = ms timestamp when a timed effect expires (0 = not running)
-    this.stackEnd = { speed:0, bulletspd:0, rapidfire:0, tripleshot:0 };
+    // stacks[id] = current active stack count (0 = inactive); all permanent
+    this.stacks = { speed:0, bulletspd:0, rapidfire:0, shield:0, tripleshot:0 };
 
     createTextures(this);
     this._buildFloor();
@@ -111,8 +109,7 @@ class GameScene extends Phaser.Scene {
     this.player.setMaxVelocity(PLAYER_SPEED);
     this.player.setDepth(5);
     this.player.lastShot = 0;
-    this.player.hp = 3;
-    this.player.body.setSize(34, 34);
+    this.player.body.setCircle(15, 5, 5);  // circle body: slides through gaps cleanly
 
     this.shieldSprite = this.add.image(0, 0, 'shieldFx')
       .setDepth(6).setVisible(false).setAlpha(0.85);
@@ -145,10 +142,19 @@ class GameScene extends Phaser.Scene {
      HUD  — per-effect coloured text, right-side stack panel
   ══════════════════════════════════════════════════════════ */
   _buildHUD() {
+    // dark backing panel behind left-side HUD
+    this.add.rectangle(0, 0, 168, 124, 0x000000, 0.52)
+      .setDepth(49).setScrollFactor(0).setOrigin(0, 0);
+
     const st = { fontSize:'18px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:4 };
-    this.hudScore = this.add.text(12, 10, 'Score: 0',   st).setDepth(50).setScrollFactor(0);
-    this.hudWave  = this.add.text(12, 34, 'Wave:  1',   st).setDepth(50).setScrollFactor(0);
-    this.hudLives = this.add.text(12, 58, 'Lives: +++', st).setDepth(50).setScrollFactor(0);
+    this.hudScore = this.add.text(12, 10, 'Score: 0', st).setDepth(50).setScrollFactor(0);
+    this.hudWave  = this.add.text(12, 34, 'Wave:  1', st).setDepth(50).setScrollFactor(0);
+    // HP bar
+    this.add.rectangle(12, 58, 144, 16, 0x330000).setDepth(50).setScrollFactor(0).setOrigin(0, 0);
+    this.hudHpBar  = this.add.rectangle(12, 58, 144, 16, 0x22cc44).setDepth(51).setScrollFactor(0).setOrigin(0, 0);
+    this.hudHpText = this.add.text(84, 66, '100%', {
+      fontSize:'11px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:3
+    }).setDepth(52).setScrollFactor(0).setOrigin(0.5, 0.5);
     this.hudMode  = this.add.text(12, 82, '', {
       fontSize:'12px', fontFamily:'monospace', color:'#aaffaa', stroke:'#000', strokeThickness:3
     }).setDepth(50).setScrollFactor(0);
@@ -176,28 +182,29 @@ class GameScene extends Phaser.Scene {
   }
 
   _refreshHUD() {
-    const now = this.time.now;
     this.hudScore.setText('Score: ' + this.score);
     this.hudWave.setText ('Wave:  ' + this.wave);
-    this.hudLives.setText('Lives: ' + Array(this.lives + 1).join('+ ').trim());
+
+    // HP bar (scales against PLAYER_MAX_HP so overheal shows correctly)
+    const hpFrac  = Math.max(this.playerHp, 0) / PLAYER_MAX_HP;
+    const barW    = Math.round(144 * hpFrac);
+    this.hudHpBar.width = barW;
+    const baseFrac = this.playerHp / PLAYER_HP;
+    this.hudHpBar.fillColor = baseFrac > 1 ? 0x44aaff : baseFrac > 0.5 ? 0x22cc44 : baseFrac > 0.25 ? 0xffaa00 : 0xff2222;
+    this.hudHpText.setText(Math.max(this.playerHp, 0) + '%');
+
     this.hudMode.setText(
       this.controlMode === 'keyboard' ? '[TAB] KB: move+SPACE' : '[TAB] Mouse: aim+click'
     ).setColor(this.controlMode === 'keyboard' ? '#aaffaa' : '#aaffff');
     this.hudMute.setText(SoundFX.muted ? '[M] Sound: OFF' : '[M] Sound: ON')
       .setColor(SoundFX.muted ? '#ff6666' : '#888888');
 
-    // timed effects
+    // permanent stacks — just show count, no timer
     const LABELS = { speed:'SPD', bulletspd:'BLT', rapidfire:'ROF', tripleshot:' x3' };
     ['speed', 'bulletspd', 'rapidfire', 'tripleshot'].forEach(id => {
       const n = this.stacks[id];
-      if (n > 0 && this.stackEnd[id] > now) {
-        const secs = ((this.stackEnd[id] - now) / 1000).toFixed(1);
-        this.hudStacks[id].setText(`${LABELS[id]} ×${n}  ${secs}s`);
-      } else {
-        this.hudStacks[id].setText('');
-      }
+      this.hudStacks[id].setText(n > 0 ? `${LABELS[id]} ×${n}` : '');
     });
-    // shield (consumable, no timer)
     const sh = this.stacks.shield;
     this.hudStacks.shield.setText(sh > 0 ? `SLD ×${sh}` : '');
   }
@@ -236,7 +243,7 @@ class GameScene extends Phaser.Scene {
     e.fireRate  = Math.max(Math.floor(type.fireRate  - this.wave * 60), Math.floor(type.fireRate  * 0.5));
     e.bulletSpd = Math.min(type.bulletSpd + this.wave * 4, 500);
     e.lastShot  = 0;
-    e.body.setSize(32, 32);
+    e.body.setCircle(14, 6, 6);  // circle body: slides through gaps cleanly
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -245,7 +252,6 @@ class GameScene extends Phaser.Scene {
   update(time) {
     if (this.isPaused) return;
     if (!this.playerAlive) return;
-    this._tickEffects(time);
     this._movePlayer(time);
     this._updateEnemies(time);
     this._updateShieldSprite();
@@ -264,14 +270,6 @@ class GameScene extends Phaser.Scene {
     }
     this.pauseOverlay.setVisible(this.isPaused);
     this.pauseText.setVisible(this.isPaused);
-  }
-
-  /* expire timed effects whose timer has elapsed */
-  _tickEffects(time) {
-    for (const key of ['speed', 'bulletspd', 'rapidfire', 'tripleshot']) {
-      if (this.stacks[key] > 0 && this.stackEnd[key] <= time)
-        this.stacks[key] = 0;
-    }
   }
 
   _updateShieldSprite() {
@@ -364,7 +362,7 @@ class GameScene extends Phaser.Scene {
         const predX    = this.player.x + this.player.body.velocity.x * travelT * acc;
         const predY    = this.player.y + this.player.body.velocity.y * travelT * acc;
         const aimAngle = Phaser.Math.RadToDeg(Math.atan2(predY - e.y, predX - e.x));
-        this._fireBullet(e.x, e.y, aimAngle, 'enemy', e.bulletSpd);
+        this._fireBullet(e.x, e.y, aimAngle, 'enemy', e.bulletSpd, e.enemyType.damage);
         SoundFX.enemyShoot();
         e.lastShot = time;
       }
@@ -374,14 +372,15 @@ class GameScene extends Phaser.Scene {
   /* ══════════════════════════════════════════════════════════
      BULLETS
   ══════════════════════════════════════════════════════════ */
-  _fireBullet(x, y, angleDeg, team, customSpeed) {
+  _fireBullet(x, y, angleDeg, team, customSpeed, damage = PLAYER_HIT_DAMAGE) {
     const isPlayer = team === 'player';
     const speed    = customSpeed ?? (isPlayer ? this._currentBulletSpeed() : 240);
     const group    = isPlayer ? this.playerBullets : this.enemyBullets;
 
     const b = this.physics.add.image(x, y, isPlayer ? 'bulletP' : 'bulletE');
     b.setDepth(8).setAngle(angleDeg);
-    b.team = team;
+    b.team   = team;
+    b.damage = damage;
     b.born = this.time.now;
     group.add(b);
     this.physics.velocityFromAngle(angleDeg, speed, b.body.velocity);
@@ -419,7 +418,8 @@ class GameScene extends Phaser.Scene {
     pu.powerupType = type;
     this.powerups.add(pu);
 
-    this.tweens.add({ targets:pu, scaleX:1.28, scaleY:1.28, yoyo:true, repeat:-1, duration:550, ease:'Sine.easeInOut' });
+    this.tweens.add({ targets:pu, scaleX:1.22, scaleY:1.22, yoyo:true, repeat:-1, duration:600, ease:'Sine.easeInOut' });
+    this.tweens.add({ targets:pu, angle:360, duration:3500, repeat:-1, ease:'Linear' });
     this.time.delayedCall(12000, () => { if (pu.active) pu.destroy(); });
   }
 
@@ -430,10 +430,18 @@ class GameScene extends Phaser.Scene {
     pu.destroy();
     SoundFX.powerup();
 
-    // ── instant: health ──
+    // ── health: restore/overheal HP (caps at PLAYER_MAX_HP) ──
     if (id === 'health') {
-      this.lives = Math.min(this.lives + 1, POWERUP_CAPS.health);
-      this._flashMsg('+1 HP', '#2ecc40');
+      if (this.playerHp >= PLAYER_MAX_HP) {
+        SoundFX.powerupMax();
+        this._flashMsg('HP MAX!', '#44ffaa');
+        return;
+      }
+      const before = this.playerHp;
+      this.playerHp = Math.min(this.playerHp + POWERUP_HEAL_AMOUNT, PLAYER_MAX_HP);
+      const gained  = this.playerHp - before;
+      const over    = this.playerHp > PLAYER_HP ? '  [OVERHEAL]' : '';
+      this._flashMsg(`+${gained}% HP${over}`, '#2ecc40');
       return;
     }
 
@@ -446,14 +454,14 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    // ── timed stackable effects ──
+    // ── permanent stackable effects ──
     const prev  = this.stacks[id];
     const atCap = prev >= POWERUP_CAPS[id];
-    this.stacks[id]   = Math.min(prev + 1, POWERUP_CAPS[id]);
-    this.stackEnd[id] = this.time.now + POWERUP_DURATION;  // refresh / start timer
+    this.stacks[id] = Math.min(prev + 1, POWERUP_CAPS[id]);
 
     const MSGS = { speed:'SPEED UP', bulletspd:'SHOTS FASTER', rapidfire:'RAPID FIRE', tripleshot:'TRIPLE SHOT' };
     const COLS = { speed:'#f39c12', bulletspd:'#e74c3c',      rapidfire:'#e67e22',    tripleshot:'#bb88ee' };
+    if (atCap) SoundFX.powerupMax();
     this._flashMsg(MSGS[id] + (atCap ? ' (MAX)' : ` ×${this.stacks[id]}`), COLS[id]);
   }
 
@@ -544,9 +552,10 @@ class GameScene extends Phaser.Scene {
   _onEnemyBulletPlayer(player, bullet) {
     if (!bullet.active || !player.active) return;
     if (bullet.team !== 'enemy') return;
+    const dmg = bullet.damage ?? PLAYER_HIT_DAMAGE;
     this._killBullet(bullet);
     if (this.stacks.shield > 0) this._absorbWithShield();
-    else this._playerHit();
+    else this._playerHit(dmg);
   }
 
   _onBulletsCollide(b1, b2) {
@@ -558,6 +567,7 @@ class GameScene extends Phaser.Scene {
 
   _onEnemyRam(player, enemy) {
     if (!player.active || !enemy.active) return;
+    const dmg = enemy.enemyType.damage ?? PLAYER_HIT_DAMAGE;
     this._spawnExplosion(enemy.x, enemy.y, 'big');
     this._spawnPowerUp(enemy.x, enemy.y);
     this.score += enemy.enemyType.points * this.wave;
@@ -565,7 +575,7 @@ class GameScene extends Phaser.Scene {
     enemy.destroy();
     this._checkWaveAdvance();
     if (this.stacks.shield > 0) this._absorbWithShield();
-    else this._playerHit();
+    else this._playerHit(dmg);
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -581,15 +591,20 @@ class GameScene extends Phaser.Scene {
 
   _showWaveBanner() {
     SoundFX.waveUp();
-    const txt = this.add.text(W/2, H/2, `WAVE ${this.wave}`, {
-      fontSize:'48px', fontFamily:'monospace',
-      color:'#ffff00', stroke:'#000', strokeThickness:8
+    const strip = this.add.rectangle(W/2, H/2, W, 72, 0x000000, 0.78)
+      .setDepth(59).setScrollFactor(0).setAlpha(0);
+    const txt = this.add.text(W/2, H/2, `── WAVE  ${this.wave} ──`, {
+      fontSize:'44px', fontFamily:'monospace',
+      color:'#ffff00', stroke:'#000000', strokeThickness:8
     }).setOrigin(0.5).setDepth(60).setAlpha(0);
 
     this.tweens.add({
-      targets:txt, alpha:1, y:H/2 - 30, duration:400, ease:'Power2',
+      targets:[strip, txt], alpha:1, duration:300, ease:'Power2',
       onComplete: () => {
-        this.tweens.add({ targets:txt, alpha:0, duration:600, delay:600, onComplete:()=>txt.destroy() });
+        this.tweens.add({
+          targets:[strip, txt], alpha:0, duration:500, delay:900,
+          onComplete: () => { txt.destroy(); strip.destroy(); }
+        });
       }
     });
   }
@@ -597,14 +612,14 @@ class GameScene extends Phaser.Scene {
   /* ══════════════════════════════════════════════════════════
      PLAYER LIFE / DEATH
   ══════════════════════════════════════════════════════════ */
-  _playerHit() {
+  _playerHit(dmg = PLAYER_HIT_DAMAGE) {
     if (!this.playerAlive) return;
-    this.lives--;
+    this.playerHp -= dmg;
     SoundFX.playerHit();
     this.cameras.main.shake(200, 0.025);
     this.player.setTint(0xff3333);
     this.time.delayedCall(300, () => { if (this.player.active) this.player.clearTint(); });
-    if (this.lives <= 0) this._playerDie();
+    if (this.playerHp <= 0) this._playerDie();
   }
 
   _playerDie() {

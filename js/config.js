@@ -19,13 +19,18 @@ const PLAYER_FIRE_RATE = 250;   // ms between shots (lower = faster)
 /* ── enemies (base, scaled per wave) ── */
 const MAX_ENEMIES = 8;
 
+/* ── player health ── */
+const PLAYER_HP         = 100;  // starting HP
+const PLAYER_MAX_HP     = 300;  // maximum HP (stackable via +HP pickups)
+const PLAYER_HIT_DAMAGE =  25;  // default damage per hit (weak enemies)
+
 /* ── power-ups ── */
 const POWERUP_DROP_CHANCE = 0.45;   // probability a slain enemy drops a power-up
-const POWERUP_DURATION    = 10000;  // ms a timed effect lasts (refreshed on re-pickup)
+const POWERUP_HEAL_AMOUNT =  25;    // HP restored by +HP pickup
 
-/* hard caps — maximum stacks for each effect */
+/* hard caps — maximum stacks for each effect (all stacks are now permanent) */
 const POWERUP_CAPS = {
-  health    : 10,   // max lives
+  health    : PLAYER_MAX_HP,  // HP cap (300)
   speed     : 3,   // +30 % move speed per stack  → max +90 %
   bulletspd : 3,   // +25 % bullet speed per stack → max +75 %
   rapidfire : 3,   // −22 % fire interval per stack → min ~34 % of base
@@ -66,6 +71,7 @@ const COL = {
    bulletSpd : enemy bullet speed
    aimAcc    : 0 = blind, 1 = perfect lead-aim
    rotateSp  : turret/body rotate speed (rad per frame step used in RotateTo)
+   damage    : HP % dealt per bullet/ram hit to player
    points    : score awarded on kill
 ─────────────────────────────────────────────────────────── */
 const ENEMY_TYPES = [
@@ -84,6 +90,7 @@ const ENEMY_TYPES = [
     bulletSpd : 210,
     aimAcc    : 0.35,
     rotateSp  : 0.05,
+    damage    : 25,
     points    : 100,
   },
   {
@@ -101,6 +108,7 @@ const ENEMY_TYPES = [
     bulletSpd : 180,
     aimAcc    : 0.15,
     rotateSp  : 0.12,
+    damage    : 25,
     points    : 150,
   },
   {
@@ -118,6 +126,7 @@ const ENEMY_TYPES = [
     bulletSpd : 260,
     aimAcc    : 0.75,
     rotateSp  : 0.07,
+    damage    : 25,
     points    : 220,
   },
   {
@@ -135,6 +144,7 @@ const ENEMY_TYPES = [
     bulletSpd : 420,
     aimAcc    : 1.0,
     rotateSp  : 0.09,
+    damage    : 50,
     points    : 280,
   },
   {
@@ -152,6 +162,7 @@ const ENEMY_TYPES = [
     bulletSpd : 310,
     aimAcc    : 1.0,
     rotateSp  : 0.04,
+    damage    : 50,
     points    : 380,
   },
 ];

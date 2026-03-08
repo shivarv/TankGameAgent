@@ -8,42 +8,109 @@ function createTextures(scene) {
   g.fillStyle(COL.FLOOR_A); g.fillRect(0, 0, TILE, TILE);
   g.fillStyle(COL.FLOOR_B); g.fillRect(TILE/2, 0, TILE/2, TILE/2);
   g.fillStyle(COL.FLOOR_B); g.fillRect(0, TILE/2, TILE/2, TILE/2);
+  g.lineStyle(1, 0x000000, 0.13);
+  g.lineBetween(TILE/2, 0, TILE/2, TILE);
+  g.lineBetween(0, TILE/2, TILE, TILE/2);
   g.generateTexture('floor', TILE, TILE); g.clear();
 
   /* ── stone wall ── */
   const S = TILE;
-  g.fillStyle(COL.STONE);   g.fillRect(0, 0, S, S);
-  g.fillStyle(COL.STONE_D); g.fillRect(2, 2, S-4, 6);
-  g.fillRect(2, S/2, S-4, 4);
-  g.fillStyle(0x00000044);  g.fillRect(S-3, 0, 3, S);
-  g.fillRect(0, S-3, S, 3);
+  // mortar background
+  g.fillStyle(0x3d2510); g.fillRect(0, 0, S, S);
+  // row 1: two bricks (top half)
+  g.fillStyle(COL.STONE);   g.fillRect(2,     2, S/2-3,  S/2-3);
+  g.fillStyle(0x7a5535);    g.fillRect(S/2+1, 2, S/2-3,  S/2-3);
+  // row 2: staggered bricks (bottom half)
+  g.fillStyle(COL.STONE_D); g.fillRect(0,         S/2+1, S/4-1,  S/2-3);
+  g.fillStyle(COL.STONE);   g.fillRect(S/4+1,     S/2+1, S/2-2,  S/2-3);
+  g.fillStyle(0x7a5535);    g.fillRect(S*3/4+1,   S/2+1, S/4-3,  S/2-3);
+  // brick top-edge highlights
+  g.fillStyle(0xb07048, 0.45);
+  g.fillRect(2, 2, S/2-3, 2);
+  g.fillRect(S/2+1, 2, S/2-3, 2);
+  g.fillRect(S/4+1, S/2+1, S/2-2, 2);
+  // outer shadow edges
+  g.fillStyle(0x000000, 0.4); g.fillRect(S-3, 0, 3, S); g.fillRect(0, S-3, S, 3);
   g.generateTexture('stone', S, S); g.clear();
 
   /* ── steel wall ── */
   g.fillStyle(COL.STEEL);   g.fillRect(0, 0, S, S);
+  // diamond plate lines
+  g.lineStyle(1, COL.STEEL_H, 0.22);
+  for (let i = -S; i < S*2; i += 10) {
+    g.lineBetween(i, 0, i+S, S);
+    g.lineBetween(i+S, 0, i, S);
+  }
+  // inset weld seam
+  g.lineStyle(2, COL.STEEL_D, 0.65); g.strokeRect(4, 4, S-8, S-8);
+  // highlight top, shadow right+bottom
   g.fillStyle(COL.STEEL_H); g.fillRect(2, 2, S-4, 3);
-  g.fillStyle(COL.STEEL_D); g.fillRect(S-4, 0, 4, S);
-  g.fillRect(0, S-4, S, 4);
-  [[6,6],[S-6,6],[6,S-6],[S-6,S-6]].forEach(([rx,ry]) => g.fillCircle(rx, ry, 3));
+  g.fillStyle(COL.STEEL_D); g.fillRect(S-4, 0, 4, S); g.fillRect(0, S-4, S, 4);
+  // bolts with specular highlight
+  [[6,6],[S-6,6],[6,S-6],[S-6,S-6]].forEach(([rx,ry]) => {
+    g.fillStyle(COL.STEEL_D); g.fillCircle(rx, ry, 4);
+    g.fillStyle(COL.STEEL_H); g.fillCircle(rx-1, ry-1, 1.5);
+  });
   g.generateTexture('steel', S, S); g.clear();
 
   /* ── tank sprite builder ── */
   const drawTank = (bodyCol, darkCol, turrCol, trackCol, key) => {
     const TW = 40, TH = 40;
+    // ground shadow
+    g.fillStyle(0x000000, 0.22); g.fillEllipse(TW/2+2, TH/2+3, TW-2, TH-14);
+    // tracks
     g.fillStyle(trackCol);
-    g.fillRect(0, 0, TW, 8);
-    g.fillRect(0, TH-8, TW, 8);
-    g.fillStyle(COL.WHEEL);
-    for (let i = 0; i < 5; i++) {
-      g.fillCircle(4 + i*8, 4,    3);
-      g.fillCircle(4 + i*8, TH-4, 3);
+    g.fillRect(0, 0, TW, 8); g.fillRect(0, TH-8, TW, 8);
+    // track segment dividers
+    g.lineStyle(1, 0x000000, 0.55);
+    for (let i = 6; i < TW; i += 7) {
+      g.lineBetween(i, 0, i, 7); g.lineBetween(i, TH-8, i, TH-1);
     }
-    g.fillStyle(bodyCol);  g.fillRect(4, 9, TW-8, TH-18);
-    g.fillStyle(darkCol);  g.fillRect(4, 9, TW-8, 3);
+    // road wheels: rim + hub
+    for (let i = 0; i < 5; i++) {
+      g.fillStyle(0x555555); g.fillCircle(4+i*8, 4,    3.5);
+      g.fillStyle(COL.WHEEL); g.fillCircle(4+i*8, 4,    2.5);
+      g.fillStyle(0x555555); g.fillCircle(4+i*8, TH-4, 3.5);
+      g.fillStyle(COL.WHEEL); g.fillCircle(4+i*8, TH-4, 2.5);
+    }
+    // sloped front plate
+    g.fillStyle(bodyCol);
+    g.fillPoints([{x:4,y:9},{x:TW-4,y:9},{x:TW-6,y:14},{x:6,y:14}], true);
+    // hull body
+    g.fillRect(4, 14, TW-8, TH-24);
+    // shading
+    g.fillStyle(darkCol);
+    g.fillRect(4, 14, TW-8, 2);
     g.fillRect(TW-8, 9, 4, TH-18);
-    g.fillStyle(turrCol);  g.fillCircle(TW/2, TH/2, 9);
-    g.fillStyle(darkCol);  g.fillRect(TW/2, TH/2-2, 16, 4);
-    g.fillStyle(darkCol);  g.fillCircle(TW/2-2, TH/2, 3);
+    // hull highlight
+    g.fillStyle(0xffffff, 0.10); g.fillRect(5, 10, 12, 2);
+    // rivets
+    [[7,11],[TW-8,11],[7,TH-13],[TW-8,TH-13]].forEach(([rx,ry]) => {
+      g.fillStyle(darkCol); g.fillCircle(rx, ry, 1.8);
+      g.fillStyle(0xffffff, 0.25); g.fillCircle(rx-0.5, ry-0.5, 0.8);
+    });
+    // turret shadow + dome
+    g.fillStyle(0x000000, 0.28); g.fillCircle(TW/2+1, TH/2+1, 9.5);
+    g.fillStyle(turrCol); g.fillCircle(TW/2, TH/2, 9);
+    g.fillStyle(0xffffff, 0.15); g.fillCircle(TW/2-3, TH/2-3, 4);
+    // mantlet (barrel mount socket)
+    g.fillStyle(darkCol); g.fillCircle(TW/2+5, TH/2, 5.5);
+    g.fillStyle(turrCol); g.fillCircle(TW/2+5, TH/2, 4.5);
+    // tapered barrel (wide at base, narrow at tip)
+    g.fillStyle(darkCol);
+    g.fillPoints([
+      {x:TW/2+5, y:TH/2-3},  {x:TW-2, y:TH/2-1.5},
+      {x:TW-2,   y:TH/2+2.5},{x:TW/2+5, y:TH/2+4}
+    ], true);
+    // barrel highlight stripe
+    g.fillStyle(0xffffff, 0.18); g.fillRect(TW/2+7, TH/2-2, TW/2-12, 1);
+    // muzzle brake notches
+    g.fillStyle(0x000000, 0.5);
+    g.fillRect(TW-5, TH/2-3, 3, 2); g.fillRect(TW-5, TH/2+2, 3, 2);
+    // cupola
+    g.fillStyle(darkCol); g.fillCircle(TW/2-2, TH/2-2, 3.5);
+    g.fillStyle(turrCol); g.fillCircle(TW/2-2, TH/2-2, 2.5);
+    g.fillStyle(0xffffff, 0.2); g.fillCircle(TW/2-3, TH/2-3, 1);
     g.generateTexture(key, TW, TH);
     g.clear();
   };
@@ -56,14 +123,18 @@ function createTextures(scene) {
   });
 
   /* ── player bullet ── */
-  g.fillStyle(COL.BULLET_P); g.fillRect(0, 1, 10, 4);
-  g.fillStyle(0xffffff);     g.fillRect(0, 2,  3, 2);
-  g.generateTexture('bulletP', 10, 6); g.clear();
+  g.fillStyle(0xff9900, 0.3); g.fillEllipse(4, 3, 10, 4);   // glow trail
+  g.fillStyle(COL.BULLET_P);  g.fillRect(3, 1, 9, 4);        // body
+  g.fillStyle(0xffffff);      g.fillTriangle(12, 1, 12, 5, 16, 3); // nosecone
+  g.fillStyle(0xffffff, 0.7); g.fillRect(4, 2, 4, 1);        // core highlight
+  g.generateTexture('bulletP', 16, 6); g.clear();
 
   /* ── enemy bullet ── */
-  g.fillStyle(0xff6644); g.fillRect(0, 1, 10, 4);
-  g.fillStyle(0xffaa88); g.fillRect(0, 2,  3, 2);
-  g.generateTexture('bulletE', 10, 6); g.clear();
+  g.fillStyle(0xaa2200, 0.3); g.fillEllipse(4, 3, 10, 4);
+  g.fillStyle(0xff6644);      g.fillRect(3, 1, 9, 4);
+  g.fillStyle(0xff9977);      g.fillTriangle(12, 1, 12, 5, 16, 3);
+  g.fillStyle(0xffaa88, 0.7); g.fillRect(4, 2, 4, 1);
+  g.generateTexture('bulletE', 16, 6); g.clear();
 
   /* ── muzzle flash ── */
   g.fillStyle(0xffffaa, 0.9); g.fillCircle(8, 8, 8);
@@ -82,11 +153,13 @@ function createTextures(scene) {
   {
     const R = 16;  // half-size; canvas is R*2 × R*2
 
-    // shared helper: draw a shaded circle background
+    // shared helper: draw a shaded circle background with depth cues
     const bg = col => {
-      g.fillStyle(col);         g.fillCircle(R, R, R);
-      g.fillStyle(0xffffff, 0.22); g.fillCircle(R-4, R-5, R * 0.38); // highlight
-      g.fillStyle(0x000000, 0.20); g.fillCircle(R+3, R+4, R * 0.50); // shadow
+      g.fillStyle(col, 0.30); g.fillCircle(R, R, R+3);      // outer glow
+      g.fillStyle(col);       g.fillCircle(R, R, R);          // main circle
+      g.lineStyle(2, 0x000000, 0.22); g.strokeCircle(R, R, R-1); // inner bevel
+      g.fillStyle(0xffffff, 0.26); g.fillCircle(R-4, R-5, R*0.38); // highlight
+      g.fillStyle(0x000000, 0.22); g.fillCircle(R+3, R+4, R*0.50); // shadow
     };
 
     // +HP  — green circle, bold white cross
@@ -147,8 +220,9 @@ function createTextures(scene) {
   }
 
   /* ── shield ring (shown around player while stacks active) ── */
-  g.lineStyle(3, 0x3498db, 0.9); g.strokeCircle(20, 20, 19);
-  g.lineStyle(1, 0x7fd3f5, 0.5); g.strokeCircle(20, 20, 22);
+  g.lineStyle(6, 0x3498db, 0.18); g.strokeCircle(20, 20, 21);  // outer glow
+  g.lineStyle(3, 0x3498db, 0.9);  g.strokeCircle(20, 20, 19);  // main ring
+  g.lineStyle(1, 0x7fd3f5, 0.55); g.strokeCircle(20, 20, 22);  // inner shimmer
   g.generateTexture('shieldFx', 40, 40); g.clear();
 
   g.destroy();
