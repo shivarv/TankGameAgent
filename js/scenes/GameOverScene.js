@@ -3,15 +3,22 @@
 ============================================================= */
 class GameOverScene extends Phaser.Scene {
   constructor() { super('GameOverScene'); }
-  init(d) { this.finalScore = d.score || 0; this.wave = d.wave || 1; }
+  init(d) {
+    this.finalScore = d.score   || 0;
+    this.finalMap   = d.map     || 1;
+    this.victory    = d.victory || false;
+  }
 
   create() {
     const cx = W/2, cy = H/2;
-    this.add.rectangle(0, 0, W, H, 0x100000).setOrigin(0);
+    const bgCol = this.victory ? 0x001020 : 0x100000;
+    this.add.rectangle(0, 0, W, H, bgCol).setOrigin(0);
 
-    const go = this.add.text(cx, cy - 90, 'GAME OVER', {
+    const label   = this.victory ? 'VICTORY!'  : 'GAME OVER';
+    const labCol  = this.victory ? '#44ffaa'   : '#ff3333';
+    const go = this.add.text(cx, cy - 90, label, {
       fontSize:'56px', fontFamily:'monospace',
-      color:'#ff3333', stroke:'#000', strokeThickness:8
+      color:labCol, stroke:'#000', strokeThickness:8
     }).setOrigin(0.5).setAlpha(0);
     this.tweens.add({ targets:go, alpha:1, duration:600, ease:'Power2' });
 
@@ -19,7 +26,8 @@ class GameOverScene extends Phaser.Scene {
       fontSize:'26px', fontFamily:'monospace', color:'#ffffff'
     }).setOrigin(0.5);
 
-    this.add.text(cx, cy + 44, `Wave  : ${this.wave}`, {
+    const mapLabel = this.victory ? `All 10 maps cleared!` : `Reached map : ${this.finalMap}`;
+    this.add.text(cx, cy + 44, mapLabel, {
       fontSize:'22px', fontFamily:'monospace', color:'#aaaaaa'
     }).setOrigin(0.5);
 

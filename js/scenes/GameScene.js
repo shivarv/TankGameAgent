@@ -4,20 +4,29 @@
 class GameScene extends Phaser.Scene {
   constructor() { super('GameScene'); }
 
+  /* resume data injected by MapClearScene (or empty on fresh start) */
+  init(d) { this._resume = d || {}; }
+
   /* ══════════════════════════════════════════════════════════
      CREATE
   ══════════════════════════════════════════════════════════ */
   create() {
-    this.score       = 0;
-    this.wave        = 1;
-    this.playerHp    = PLAYER_HP;
-    this.kills       = 0;
+    const r = this._resume;
+
+    this.score       = r.score    ?? 0;
+    this.mapIndex    = r.mapIndex ?? 0;   // 0-based, set by MapClearScene on advance
+    this.wave        = this.mapIndex + 1; // drives enemy scaling
+    this.playerHp    = r.playerHp ?? PLAYER_HP;
+    this.kills       = 0;                 // resets every map
     this.playerAlive = true;
     this.fireAngle   = 0;
-    this.controlMode = 'keyboard';  // 'keyboard' | 'mouse'
+    this.controlMode = 'keyboard';
+    this._mapAdvancing = false;
 
-    // stacks[id] = current active stack count (0 = inactive); all permanent
-    this.stacks = { speed:0, bulletspd:0, rapidfire:0, shield:0, tripleshot:0 };
+    // restore power-up stacks from previous map, or start fresh
+    this.stacks = r.stacks
+      ? { ...r.stacks }
+      : { speed:0, bulletspd:0, rapidfire:0, shield:0, tripleshot:0 };
 
     createTextures(this);
     this._buildFloor();
@@ -53,6 +62,9 @@ class GameScene extends Phaser.Scene {
 
     this.cameras.main.setBounds(0, 0, W, H);
     this.physics.world.setBounds(0, 0, W, H);
+
+    // Show the first map banner on game start
+    this._showMapBanner();
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -75,23 +87,7 @@ class GameScene extends Phaser.Scene {
   }
 
   _buildMap() {
-    const L = [
-      'XXXXXXXXXXXXXXXXXX',
-      'X................X',
-      'X..SS....X..SS...X',
-      'X..SS....X..SS...X',
-      'X........X.......X',
-      'X....XX..........X',
-      'X....XX...SS.....X',
-      'X.........SS.....X',
-      'X...SS....X......X',
-      'X...SS....X..XX..X',
-      'X........XX..XX..X',
-      'X..SS............X',
-      'X..SS............X',
-      'XXXXXXXXXXXXXXXXXX',
-    ];
-    L.forEach((row, r) => {
+    MAPS[this.mapIndex].layout.forEach((row, r) => {
       [...row].forEach((ch, c) => {
         if (ch === 'X') {
           const s = this.steelWalls.create(c*TILE + TILE/2, r*TILE + TILE/2, 'steel');
@@ -151,22 +147,27 @@ class GameScene extends Phaser.Scene {
   ══════════════════════════════════════════════════════════ */
   _buildHUD() {
     // dark backing panel behind left-side HUD
-    this.add.rectangle(0, 0, 168, 124, 0x000000, 0.52)
+    this.add.rectangle(0, 0, 168, 152, 0x000000, 0.52)
       .setDepth(49).setScrollFactor(0).setOrigin(0, 0);
 
-    const st = { fontSize:'18px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:4 };
-    this.hudScore = this.add.text(12, 10, 'Score: 0', st).setDepth(50).setScrollFactor(0);
-    this.hudWave  = this.add.text(12, 34, 'Wave:  1', st).setDepth(50).setScrollFactor(0);
+    const st  = { fontSize:'18px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:4 };
+    const sm  = { fontSize:'13px', fontFamily:'monospace', color:'#aaffaa', stroke:'#000', strokeThickness:3 };
+    this.hudScore  = this.add.text(12, 10, 'Score: 0', st).setDepth(50).setScrollFactor(0);
+    this.hudWave   = this.add.text(12, 34, 'Map: 1/10', st).setDepth(50).setScrollFactor(0);
+    this.hudMapName = this.add.text(12, 54, MAPS[0].name, sm).setDepth(50).setScrollFactor(0);
     // HP bar
-    this.add.rectangle(12, 58, 144, 16, 0x330000).setDepth(50).setScrollFactor(0).setOrigin(0, 0);
-    this.hudHpBar  = this.add.rectangle(12, 58, 144, 16, 0x22cc44).setDepth(51).setScrollFactor(0).setOrigin(0, 0);
-    this.hudHpText = this.add.text(84, 66, '100%', {
+    this.add.rectangle(12, 72, 144, 16, 0x330000).setDepth(50).setScrollFactor(0).setOrigin(0, 0);
+    this.hudHpBar  = this.add.rectangle(12, 72, 144, 16, 0x22cc44).setDepth(51).setScrollFactor(0).setOrigin(0, 0);
+    this.hudHpText = this.add.text(84, 80, '100%', {
       fontSize:'11px', fontFamily:'monospace', color:'#ffffff', stroke:'#000', strokeThickness:3
     }).setDepth(52).setScrollFactor(0).setOrigin(0.5, 0.5);
-    this.hudMode  = this.add.text(12, 82, '', {
+    this.hudKills = this.add.text(12, 92, 'Kills: 0/20', {
+      fontSize:'12px', fontFamily:'monospace', color:'#ffdd88', stroke:'#000', strokeThickness:3
+    }).setDepth(50).setScrollFactor(0);
+    this.hudMode  = this.add.text(12, 110, '', {
       fontSize:'12px', fontFamily:'monospace', color:'#aaffaa', stroke:'#000', strokeThickness:3
     }).setDepth(50).setScrollFactor(0);
-    this.hudMute  = this.add.text(12, 99, '', {
+    this.hudMute  = this.add.text(12, 127, '', {
       fontSize:'12px', fontFamily:'monospace', color:'#888888', stroke:'#000', strokeThickness:3
     }).setDepth(50).setScrollFactor(0);
 
@@ -191,7 +192,9 @@ class GameScene extends Phaser.Scene {
 
   _refreshHUD() {
     this.hudScore.setText('Score: ' + this.score);
-    this.hudWave.setText ('Wave:  ' + this.wave);
+    this.hudWave.setText (`Map: ${this.mapIndex + 1}/10`);
+    this.hudMapName.setText(MAPS[this.mapIndex].name);
+    this.hudKills.setText(`Kills: ${this.kills}/${KILLS_PER_MAP}`);
 
     // HP bar (scales against PLAYER_MAX_HP so overheal shows correctly)
     const hpFrac  = Math.max(this.playerHp, 0) / PLAYER_MAX_HP;
@@ -652,7 +655,7 @@ class GameScene extends Phaser.Scene {
       this.kills++;
       if (enemy.turret) { enemy.turret.destroy(); enemy.turret = null; }
       enemy.destroy();
-      this._checkWaveAdvance();
+      this._checkMapAdvance();
     } else {
       enemy.setTint(0xffffff);
       if (enemy.turret) enemy.turret.setTint(0xffffff);
@@ -687,37 +690,65 @@ class GameScene extends Phaser.Scene {
     this.kills++;
     if (enemy.turret) { enemy.turret.destroy(); enemy.turret = null; }
     enemy.destroy();
-    this._checkWaveAdvance();
+    this._checkMapAdvance();
     if (this.stacks.shield > 0) this._absorbWithShield();
     else this._playerHit(dmg);
   }
 
   /* ══════════════════════════════════════════════════════════
-     WAVE PROGRESSION
+     MAP PROGRESSION
   ══════════════════════════════════════════════════════════ */
-  _checkWaveAdvance() {
-    if (this.kills >= this.wave * 5 && this.wave < 10) {
-      this.wave++;
-      this.kills = 0;
-      this._showWaveBanner();
+  _checkMapAdvance() {
+    if (this.kills < KILLS_PER_MAP) return;
+    if (this._mapAdvancing) return;   // prevent double-trigger
+    this._mapAdvancing = true;
+
+    SoundFX.waveUp();
+
+    if (this.mapIndex >= MAPS.length - 1) {
+      // All maps cleared — victory!
+      this.time.delayedCall(900, () => {
+        this.scene.start('GameOverScene', { score: this.score, map: MAPS.length, victory: true });
+      });
+    } else {
+      // Brief pause then hand off to MapClearScene
+      this.time.delayedCall(900, () => {
+        this.cameras.main.fade(400, 0, 0, 0, false, (_cam, progress) => {
+          if (progress >= 1) {
+            this.scene.start('MapClearScene', {
+              clearedMapIndex : this.mapIndex,
+              nextMapIndex    : this.mapIndex + 1,
+              score           : this.score,
+              playerHp        : Math.max(this.playerHp, 1),
+              stacks          : { ...this.stacks },
+            });
+          }
+        });
+      });
     }
   }
 
-  _showWaveBanner() {
-    SoundFX.waveUp();
-    const strip = this.add.rectangle(W/2, H/2, W, 72, 0x000000, 0.78)
+  _showMapBanner() {
+    const mapDef = MAPS[this.mapIndex];
+    const strip  = this.add.rectangle(W/2, H/2, W, 96, 0x000000, 0.82)
       .setDepth(59).setScrollFactor(0).setAlpha(0);
-    const txt = this.add.text(W/2, H/2, `── WAVE  ${this.wave} ──`, {
-      fontSize:'44px', fontFamily:'monospace',
-      color:'#ffff00', stroke:'#000000', strokeThickness:8
-    }).setOrigin(0.5).setDepth(60).setAlpha(0);
+    const txt = this.add.text(W/2, H/2 - 14,
+      `MAP ${this.mapIndex + 1} / ${MAPS.length}  —  ${mapDef.name}`, {
+        fontSize:'34px', fontFamily:'monospace',
+        color:'#ffff00', stroke:'#000000', strokeThickness:8
+      }).setOrigin(0.5).setDepth(60).setAlpha(0);
+    const sub = this.add.text(W/2, H/2 + 24,
+      `Eliminate ${KILLS_PER_MAP} enemies to advance`, {
+        fontSize:'16px', fontFamily:'monospace',
+        color:'#aaffaa', stroke:'#000', strokeThickness:4
+      }).setOrigin(0.5).setDepth(60).setAlpha(0);
 
     this.tweens.add({
-      targets:[strip, txt], alpha:1, duration:300, ease:'Power2',
+      targets:[strip, txt, sub], alpha:1, duration:300, ease:'Power2',
       onComplete: () => {
         this.tweens.add({
-          targets:[strip, txt], alpha:0, duration:500, delay:900,
-          onComplete: () => { txt.destroy(); strip.destroy(); }
+          targets:[strip, txt, sub], alpha:0, duration:500, delay:1400,
+          onComplete: () => { strip.destroy(); txt.destroy(); sub.destroy(); }
         });
       }
     });
@@ -751,7 +782,7 @@ class GameScene extends Phaser.Scene {
     this.player.setActive(false).setVisible(false);
     this.playerTurret.setVisible(false);
     this.time.delayedCall(1200, () => {
-      this.scene.start('GameOverScene', { score:this.score, wave:this.wave });
+      this.scene.start('GameOverScene', { score:this.score, map:this.mapIndex + 1 });
     });
   }
 }
