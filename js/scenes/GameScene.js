@@ -40,6 +40,9 @@ export default class GameScene extends Phaser.Scene {
       ? { ...r.stacks }
       : { speed:0, bulletspd:0, rapidfire:0, shield:0, tripleshot:0 };
 
+    // HUD dirty-check cache — avoids setText every frame when nothing changed
+    this._hud = { score:-1, mapIndex:-1, kills:-1, playerHp:-1, controlMode:'', muted:undefined, stacks:{} };
+
     createTextures(this);
     this._buildFloor();
     this._buildGroups();
@@ -87,9 +90,11 @@ export default class GameScene extends Phaser.Scene {
      BUILDERS
   ══════════════════════════════════════════════════════════ */
   _buildFloor() {
+    // Bake all 252 floor tiles into one RenderTexture → single draw call instead of 252
+    const rt = this.add.renderTexture(0, 0, W, H).setDepth(-1).setOrigin(0, 0);
     for (let r = 0; r < MAP_ROWS; r++)
       for (let c = 0; c < MAP_COLS; c++)
-        this.add.image(c*TILE + TILE/2, r*TILE + TILE/2, 'floor').setDepth(-1);
+        rt.draw('floor', c * TILE, r * TILE);
   }
 
   _buildGroups() {
@@ -205,32 +210,55 @@ export default class GameScene extends Phaser.Scene {
   }
 
   _refreshHUD() {
-    this.hudScore.setText('Score: ' + this.score);
-    this.hudWave.setText (`Map: ${this.mapIndex + 1}/10`);
-    this.hudKills.setText(`Kills: ${this.kills}/${KILLS_PER_MAP}`);
+    const c = this._hud;
 
-    // HP bar (scales against PLAYER_MAX_HP so overheal shows correctly)
-    const hpFrac  = Math.max(this.playerHp, 0) / PLAYER_MAX_HP;
-    const barW    = Math.max(Math.round(144 * hpFrac), 1);
-    const baseFrac = this.playerHp / PLAYER_HP;
-    const barCol  = baseFrac > 1 ? 0x44aaff : baseFrac > 0.5 ? 0x22cc44 : baseFrac > 0.25 ? 0xffaa00 : 0xff2222;
-    this.hudHpBar.setSize(barW, 16).setFillStyle(barCol);
-    this.hudHpText.setText(Math.max(this.playerHp, 0) + '%');
+    if (c.score !== this.score) {
+      this.hudScore.setText('Score: ' + this.score);
+      c.score = this.score;
+    }
+    if (c.mapIndex !== this.mapIndex) {
+      this.hudWave.setText(`Map: ${this.mapIndex + 1}/10`);
+      c.mapIndex = this.mapIndex;
+    }
+    if (c.kills !== this.kills) {
+      this.hudKills.setText(`Kills: ${this.kills}/${KILLS_PER_MAP}`);
+      c.kills = this.kills;
+    }
+    if (c.playerHp !== this.playerHp) {
+      const hpFrac  = Math.max(this.playerHp, 0) / PLAYER_MAX_HP;
+      const barW    = Math.max(Math.round(144 * hpFrac), 1);
+      const baseFrac = this.playerHp / PLAYER_HP;
+      const barCol  = baseFrac > 1 ? 0x44aaff : baseFrac > 0.5 ? 0x22cc44 : baseFrac > 0.25 ? 0xffaa00 : 0xff2222;
+      this.hudHpBar.setSize(barW, 16).setFillStyle(barCol);
+      this.hudHpText.setText(Math.max(this.playerHp, 0) + '%');
+      c.playerHp = this.playerHp;
+    }
+    if (c.controlMode !== this.controlMode) {
+      this.hudMode.setText(
+        this.controlMode === 'keyboard' ? '[TAB] KB: move+SPACE' : '[TAB] Mouse: aim+click'
+      ).setColor(this.controlMode === 'keyboard' ? '#aaffaa' : '#aaffff');
+      c.controlMode = this.controlMode;
+    }
+    const muted = SoundFX.muted;
+    if (c.muted !== muted) {
+      this.hudMute.setText(muted ? '[M] Sound: OFF' : '[M] Sound: ON')
+        .setColor(muted ? '#ff6666' : '#888888');
+      c.muted = muted;
+    }
 
-    this.hudMode.setText(
-      this.controlMode === 'keyboard' ? '[TAB] KB: move+SPACE' : '[TAB] Mouse: aim+click'
-    ).setColor(this.controlMode === 'keyboard' ? '#aaffaa' : '#aaffff');
-    this.hudMute.setText(SoundFX.muted ? '[M] Sound: OFF' : '[M] Sound: ON')
-      .setColor(SoundFX.muted ? '#ff6666' : '#888888');
-
-    // permanent stacks — just show count, no timer
     const LABELS = { speed:'SPD', bulletspd:'BLT', rapidfire:'ROF', tripleshot:' x3' };
     ['speed', 'bulletspd', 'rapidfire', 'tripleshot'].forEach(id => {
       const n = this.stacks[id];
-      this.hudStacks[id].setText(n > 0 ? `${LABELS[id]} ×${n}` : '');
+      if (c.stacks[id] !== n) {
+        this.hudStacks[id].setText(n > 0 ? `${LABELS[id]} ×${n}` : '');
+        c.stacks[id] = n;
+      }
     });
     const sh = this.stacks.shield;
-    this.hudStacks.shield.setText(sh > 0 ? `SLD ×${sh}` : '');
+    if (c.stacks.shield !== sh) {
+      this.hudStacks.shield.setText(sh > 0 ? `SLD ×${sh}` : '');
+      c.stacks.shield = sh;
+    }
   }
 
   /* ══════════════════════════════════════════════════════════
@@ -391,10 +419,6 @@ export default class GameScene extends Phaser.Scene {
     // Recoil: spring turret back 4 px then return to rest
     this.playerTurret.turretRecoil = 1;
     this.tweens.add({ targets: this.playerTurret, turretRecoil: 0, duration: 150, ease: 'Power2Out' });
-
-    // Brief point-light flash at muzzle
-    const muzzleLight = this.add.pointlight(tipX, tipY, 0xffbb44, 80, 1.2);
-    this.time.delayedCall(80, () => muzzleLight.destroy());
 
     this.cameras.main.shake(60, 0.006);
     SoundFX.playerShoot();

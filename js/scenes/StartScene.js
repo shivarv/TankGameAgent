@@ -18,7 +18,7 @@ export default class StartScene extends Phaser.Scene {
     }).setOrigin(0.5);
     this.tweens.add({ targets:title, scaleX:1.04, scaleY:1.04, yoyo:true, repeat:-1, duration:900, ease:'Sine.easeInOut' });
 
-    this.add.text(cx, cy - 58, '10 Maps  ·  5 Enemy Types  ·  6 Power-ups', {
+    this.add.text(cx, cy - 82, '10 Maps  ·  5 Enemy Types  ·  6 Power-ups', {
       fontSize:'13px', fontFamily:'monospace', color:'#557755'
     }).setOrigin(0.5);
 

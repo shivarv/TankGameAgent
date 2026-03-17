@@ -4,21 +4,44 @@
   <meta charset="utf-8" />
   <title>Top-Down Tank Battle</title>
   <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <!-- Preconnect so the CDN DNS/TLS handshake starts immediately -->
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
     html, body { width:100%; height:100%; background:#0a0a0a; overflow:hidden; }
-    #game-container {
-      width:100%;
-      height:100%;
+    #game-container { width:100%; height:100%; }
+    canvas { display:block; image-rendering:auto; }
+
+    /* Loading screen — hidden once Phaser takes over */
+    #loading {
+      position:fixed; inset:0;
+      display:flex; flex-direction:column;
+      align-items:center; justify-content:center;
+      background:#0a0a0a; color:#7cfc00;
+      font-family:monospace; font-size:1.1rem;
+      gap:1rem; z-index:10;
     }
-    /* Phaser Scale.FIT positions the canvas; let browser smooth-scale at any size */
-    canvas {
-      display:block;
-      image-rendering:auto;
+    #loading .spinner {
+      width:40px; height:40px;
+      border:3px solid #1a3a1a;
+      border-top-color:#7cfc00;
+      border-radius:50%;
+      animation:spin 0.8s linear infinite;
     }
+    @keyframes spin { to { transform:rotate(360deg); } }
   </style>
 </head>
 <body>
-<div id="game-container"></div>
+  <!-- Shown immediately while JS downloads; Phaser's own canvas hides this -->
+  <div id="loading">
+    <div class="spinner"></div>
+    <span>Loading…</span>
+  </div>
+  <div id="game-container"></div>
+
+  <!-- Phaser from CDN — ~1.2 MB served from a global edge, not your Render instance -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.87.0/dist/phaser.min.js"
+          onerror="this.onerror=null;this.src='/phaser.min.js'"></script>
+  <!-- Your game logic — now only ~100 KB -->
 </body>
 </html>

@@ -4,6 +4,9 @@
 import { COL, TILE, ENEMY_TYPES } from './config.js';
 
 export function createTextures(scene) {
+  // Textures are stored in the global TextureManager — skip regeneration on map restart
+  if (scene.textures.exists('floor')) return;
+
   const g = scene.make.graphics({ add: false });
 
   /* ── floor tile ── */

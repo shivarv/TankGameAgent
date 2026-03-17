@@ -22,4 +22,7 @@ new Phaser.Game({
     arcade : { gravity:{ y:0 }, debug:false }
   },
   scene: [StartScene, GameScene, GameOverScene, MapClearScene],
+  callbacks: {
+    postBoot: () => { document.getElementById('loading')?.remove(); },
+  },
 });
