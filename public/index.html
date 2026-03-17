@@ -6,12 +6,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <style>
     * { margin:0; padding:0; box-sizing:border-box; }
-    body { background:#0a0a0a; overflow:hidden; }
+    html, body { width:100%; height:100%; background:#0a0a0a; overflow:hidden; }
     #game-container {
-      width:100vw; height:100vh;
-      display:flex; align-items:center; justify-content:center;
+      width:100%;
+      height:100%;
     }
-    canvas { display:block; image-rendering:pixelated; }
+    /* Phaser Scale.FIT positions the canvas; let browser smooth-scale at any size */
+    canvas {
+      display:block;
+      image-rendering:auto;
+    }
   </style>
 </head>
 <body>

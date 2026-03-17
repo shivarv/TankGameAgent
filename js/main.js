@@ -7,11 +7,16 @@ import MapClearScene from './scenes/MapClearScene.js';
 
 new Phaser.Game({
   type           : Phaser.AUTO,
-  width          : W,
-  height         : H,
   parent         : 'game-container',
   backgroundColor: '#0d1f0d',
-  antialias      : false,
+  antialias      : true,
+  scale: {
+    mode      : Phaser.Scale.FIT,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+    width     : W,
+    height    : H,
+    max       : { width: W * 2, height: H * 2 },  // cap at 1440×1120
+  },
   physics: {
     default: 'arcade',
     arcade : { gravity:{ y:0 }, debug:false }
