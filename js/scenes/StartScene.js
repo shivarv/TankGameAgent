@@ -56,11 +56,6 @@ export default class StartScene extends Phaser.Scene {
     /* ── background ── */
     this.add.rectangle(0, 0, W, H, 0x0a1a0a).setOrigin(0);
 
-    /* subtle grid overlay */
-    const grid = this.add.graphics();
-    grid.lineStyle(1, 0x1a3a1a, 0.4);
-    for (let x = 0; x <= W; x += 40) grid.lineBetween(x, 0, x, H);
-    for (let y = 0; y <= H; y += 40) grid.lineBetween(0, y, W, y);
 
     /* ── border frame: corners + top/bottom lines all on same y ── */
     const TY = 18, BY = H - 18, EDGE = 10, ARM = 22;
