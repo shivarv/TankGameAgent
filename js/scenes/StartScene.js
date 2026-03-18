@@ -62,11 +62,18 @@ export default class StartScene extends Phaser.Scene {
     for (let x = 0; x <= W; x += 40) grid.lineBetween(x, 0, x, H);
     for (let y = 0; y <= H; y += 40) grid.lineBetween(0, y, W, y);
 
-    this._drawCornerBrackets();
+    /* ── border frame: corners + top/bottom lines all on same y ── */
+    const TY = 18, BY = H - 18, EDGE = 10, ARM = 22;
+    this._drawCornerBrackets(TY, BY, EDGE, ARM);
 
-    /* ── top accent bar ── */
-    this.add.rectangle(cx, 18, W - 60, 2, 0x2ecc40, 0.6).setOrigin(0.5);
-    this.add.text(cx, 18, '◆  TACTICAL WARFARE  ◆', {
+    /* top line — split around centre text */
+    const tg = this.add.graphics();
+    tg.lineStyle(1, 0x2ecc40, 0.5);
+    tg.lineBetween(EDGE + ARM, TY, cx - 88, TY);
+    tg.lineBetween(cx + 88,   TY, W - EDGE - ARM, TY);
+
+    /* top label sits on the line gap */
+    this.add.text(cx, TY, '◆  TACTICAL WARFARE  ◆', {
       fontSize: '10px', fontFamily: 'monospace', color: '#557755'
     }).setOrigin(0.5);
 
@@ -86,24 +93,48 @@ export default class StartScene extends Phaser.Scene {
 
     this._divider(cy - 52);
 
-    /* ── two-column info panel ── */
-    const colL = cx - 168, colR = cx + 32;
-    const rowY  = cy - 36;
+    /* ── two-column info panel ──────────────────────────────────
+       Entire block is 404 px wide, mathematically centred on cx.
+         lKey → lVal  (68 px key col)
+         rKey → rVal  (46 px label col)
+         centre gap between columns: 32 px
+    ─────────────────────────────────────────────────────────── */
+    const BLOCK_W  = 404;
+    const lKey     = cx - BLOCK_W / 2;          // 158
+    const lVal     = lKey + 68;                  // 226
+    const rKey     = lVal + 130 + 32;            // 388  (130 = value col width)
+    const rVal     = rKey + 46;                  // 434
+    const rowY     = cy - 36;
+    const rowStep  = 18;
 
-    this._sectionLabel(colL, rowY, '[ CONTROLS ]', '#88aa88');
+    /* thin centre separator */
+    const sep = this.add.graphics();
+    sep.lineStyle(1, 0x2ecc40, 0.18);
+    sep.lineBetween(cx, rowY - 10, cx, rowY + 6 * rowStep + 6);
+
+    /* Controls header — aligned with key column */
+    this.add.text(lKey, rowY, '[ CONTROLS ]', {
+      fontSize: '11px', fontFamily: 'monospace', color: '#88aa88'
+    }).setOrigin(0, 1);
+
     const controls = [
       ['MOVE',  'WASD / Arrows'],
-      ['FIRE',  'SPACE  or  Click'],
+      ['FIRE',  'Space / Click'],
       ['AIM',   'Mouse cursor'],
-      ['MODE',  'TAB  toggle'],
+      ['MODE',  'TAB toggle'],
       ['PAUSE', 'P'],
     ];
     controls.forEach(([key, val], i) => {
-      this.add.text(colL,      rowY + 18 + i * 18, key, { fontSize: '12px', fontFamily: 'monospace', color: '#ffdd88' }).setOrigin(0, 0.5);
-      this.add.text(colL + 58, rowY + 18 + i * 18, val, { fontSize: '12px', fontFamily: 'monospace', color: '#aaccaa' }).setOrigin(0, 0.5);
+      const y = rowY + rowStep + i * rowStep;
+      this.add.text(lKey, y, key, { fontSize: '12px', fontFamily: 'monospace', color: '#ffdd88' }).setOrigin(0, 0.5);
+      this.add.text(lVal, y, val, { fontSize: '12px', fontFamily: 'monospace', color: '#aaccaa' }).setOrigin(0, 0.5);
     });
 
-    this._sectionLabel(colR, rowY, '[ POWER-UPS ]', '#88aacc');
+    /* Power-ups header — aligned with label column */
+    this.add.text(rKey, rowY, '[ POWER-UPS ]', {
+      fontSize: '11px', fontFamily: 'monospace', color: '#88aacc'
+    }).setOrigin(0, 1);
+
     const pups = [
       ['+HP', '#2ecc40', 'Restore health'],
       ['SPD', '#f39c12', 'Speed boost'],
@@ -113,8 +144,9 @@ export default class StartScene extends Phaser.Scene {
       ['x3',  '#9b59b6', 'Triple shot'],
     ];
     pups.forEach(([label, col, desc], i) => {
-      this.add.text(colR,      rowY + 18 + i * 18, label, { fontSize: '12px', fontFamily: 'monospace', color: col, fontStyle: 'bold' }).setOrigin(0, 0.5);
-      this.add.text(colR + 40, rowY + 18 + i * 18, desc,  { fontSize: '12px', fontFamily: 'monospace', color: '#aabbcc' }).setOrigin(0, 0.5);
+      const y = rowY + rowStep + i * rowStep;
+      this.add.text(rKey, y, label, { fontSize: '12px', fontFamily: 'monospace', color: col, fontStyle: 'bold' }).setOrigin(0, 0.5);
+      this.add.text(rVal, y, desc,  { fontSize: '12px', fontFamily: 'monospace', color: '#aabbcc' }).setOrigin(0, 0.5);
     });
 
     this._divider(cy + 80);
@@ -163,9 +195,13 @@ export default class StartScene extends Phaser.Scene {
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
     this.tweens.add({ targets: btn, alpha: 0.15, yoyo: true, repeat: -1, duration: 700, ease: 'Sine.easeInOut' });
 
-    /* ── bottom accent bar ── */
-    this.add.rectangle(cx, H - 18, W - 60, 2, 0x2ecc40, 0.6).setOrigin(0.5);
-    this.add.text(cx, H - 18, 'v1.0  ·  10 MAPS  ·  WAVE SURVIVAL', {
+    /* ── bottom line — split around centre text ── */
+    const bg2 = this.add.graphics();
+    bg2.lineStyle(1, 0x2ecc40, 0.5);
+    bg2.lineBetween(EDGE + ARM, BY, cx - 112, BY);
+    bg2.lineBetween(cx + 112,   BY, W - EDGE - ARM, BY);
+
+    this.add.text(cx, BY, 'v1.0  ·  10 MAPS  ·  WAVE SURVIVAL', {
       fontSize: '10px', fontFamily: 'monospace', color: '#335533'
     }).setOrigin(0.5);
 
@@ -254,14 +290,18 @@ export default class StartScene extends Phaser.Scene {
     this.add.text(x, y, text, { fontSize: '11px', fontFamily: 'monospace', color }).setOrigin(0.5, 1);
   }
 
-  _drawCornerBrackets() {
+  _drawCornerBrackets(ty, by, edge, arm) {
     const g = this.add.graphics();
-    g.lineStyle(2, 0x2ecc40, 0.5);
-    const sz = 20, pad = 10;
-    g.beginPath(); g.moveTo(pad, pad + sz); g.lineTo(pad, pad); g.lineTo(pad + sz, pad); g.strokePath();
-    g.beginPath(); g.moveTo(W - pad - sz, pad); g.lineTo(W - pad, pad); g.lineTo(W - pad, pad + sz); g.strokePath();
-    g.beginPath(); g.moveTo(pad, H - pad - sz); g.lineTo(pad, H - pad); g.lineTo(pad + sz, H - pad); g.strokePath();
-    g.beginPath(); g.moveTo(W - pad - sz, H - pad); g.lineTo(W - pad, H - pad); g.lineTo(W - pad, H - pad - sz); g.strokePath();
+    g.lineStyle(2, 0x2ecc40, 0.6);
+
+    // top-left: vertical drop from ty down, corner, horizontal to line start
+    g.beginPath(); g.moveTo(edge, ty + arm); g.lineTo(edge, ty); g.lineTo(edge + arm, ty); g.strokePath();
+    // top-right
+    g.beginPath(); g.moveTo(W - edge - arm, ty); g.lineTo(W - edge, ty); g.lineTo(W - edge, ty + arm); g.strokePath();
+    // bottom-left
+    g.beginPath(); g.moveTo(edge, by - arm); g.lineTo(edge, by); g.lineTo(edge + arm, by); g.strokePath();
+    // bottom-right
+    g.beginPath(); g.moveTo(W - edge - arm, by); g.lineTo(W - edge, by); g.lineTo(W - edge, by - arm); g.strokePath();
   }
 
   _miniTankIcon(x, y, color) {
